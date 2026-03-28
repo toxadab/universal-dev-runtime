@@ -17,6 +17,7 @@ Works with **any tech stack**: PHP, Python, Node.js, Go, Ruby, Rust, Java, and m
 - 🔄 **Auto Context** — Runtime memory generated before each request
 - 🌐 **Universal** — Works with any technology stack
 - 📦 **Zero Config** — Automatic stack detection and project bootstrap
+- 🌈 **Web Interface** — Beautiful UI for managing all memory types
 
 ---
 
@@ -52,6 +53,19 @@ qwx --bootstrap
 
 ```bash
 qwx "create a new controller for user authentication"
+```
+
+### Web Interface (NEW!)
+
+```bash
+# Initialize demo data (optional)
+npm run init-demo
+
+# Start web server
+npm run web
+
+# Open in browser
+http://localhost:3000
 ```
 
 ---
@@ -309,6 +323,49 @@ npm link
 # Test
 qwx --help
 ```
+
+---
+
+## Web Interface
+
+The web interface provides a visual dashboard for managing all memory types:
+
+### Features
+
+- 📊 **Dashboard** - Overview of all memory with statistics
+- 🧵 **Thread State** - Edit current task, artifacts, decisions, questions
+- 👥 **Team Management** - Add/remove team members
+- 📝 **Shared Memory** - Manage team decisions and patterns
+- 🔍 **Semantic Search** - Search memory with TF-IDF algorithm
+- 📄 **Documents** - Browse and manage semantic documents
+
+### Usage
+
+```bash
+# From your project directory
+npm run web
+
+# Or with custom port
+QWX_WEB_PORT=8080 npm run web
+```
+
+Then open **http://localhost:3000** in your browser.
+
+### API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/dashboard` | Get all memory overview |
+| GET/PUT | `/api/thread-state` | Get/update thread state |
+| GET/PUT | `/api/shared-memory` | Get/update shared memory |
+| GET/POST/DELETE | `/api/team` | Manage team members |
+| GET | `/api/semantic-search?q=query` | Search memory |
+| GET/POST/DELETE | `/api/semantic-documents` | Manage documents |
+| POST | `/api/decisions` | Add decision |
+| POST | `/api/patterns` | Add pattern |
+| POST | `/api/promote` | Promote thread to shared |
+
+See [docs/WEB.md](docs/WEB.md) for full documentation.
 
 ---
 

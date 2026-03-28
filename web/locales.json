@@ -1,0 +1,288 @@
+{
+  "en": {
+    "nav": {
+      "title": "Universal Dev Runtime",
+      "subtitle": "Memory Manager",
+      "refresh": "Refresh"
+    },
+    "stats": {
+      "decisions": "Decisions",
+      "patterns": "Patterns",
+      "documents": "Documents",
+      "teamMembers": "Team Members"
+    },
+    "tabs": {
+      "threadState": "Thread State",
+      "sharedMemory": "Shared Memory",
+      "semanticSearch": "Semantic Search",
+      "documents": "Documents",
+      "runtimeMemory": "Runtime Memory"
+    },
+    "threadState": {
+      "currentTask": "Current Task",
+      "currentTaskPlaceholder": "Enter current task...",
+      "activeArtifacts": "Active Artifacts",
+      "recentDecisions": "Recent Decisions",
+      "openQuestions": "Open Questions",
+      "correctionNotes": "Correction Notes",
+      "noCurrentTask": "No current task",
+      "noActiveArtifacts": "No active artifacts",
+      "noRecentDecisions": "No recent decisions",
+      "noOpenQuestions": "No open questions",
+      "noCorrectionNotes": "No correction notes",
+      "clearThreadState": "Clear Thread State",
+      "promoteToShared": "Promote to Shared"
+    },
+    "sharedMemory": {
+      "teamMembers": "Team Members",
+      "add": "Add",
+      "teamDecisions": "Team Decisions",
+      "patternsConventions": "Patterns & Conventions",
+      "noTeamMembers": "No team members",
+      "noTeamDecisions": "No team decisions",
+      "noPatterns": "No patterns"
+    },
+    "search": {
+      "placeholder": "Search memory...",
+      "search": "Search",
+      "noResults": "No results found",
+      "found": "Found",
+      "results": "result(s)",
+      "for": "for",
+      "match": "match"
+    },
+    "documents": {
+      "semanticDocuments": "Semantic Documents",
+      "addDocument": "Add Document",
+      "noDocuments": "No documents"
+    },
+    "runtimeMemory": {
+      "title": "Runtime Memory (Auto-generated)",
+      "refresh": "Refresh",
+      "notGenerated": "No runtime memory generated yet."
+    },
+    "modals": {
+      "addTeamMember": {
+        "title": "Add Team Member",
+        "name": "Name",
+        "role": "Role",
+        "rolePlaceholder": "e.g. Backend Developer",
+        "cancel": "Cancel",
+        "addMember": "Add Member"
+      },
+      "addDecision": {
+        "title": "Add Decision",
+        "text": "Decision Text",
+        "cancel": "Cancel",
+        "addDecision": "Add Decision"
+      },
+      "addPattern": {
+        "title": "Add Pattern",
+        "text": "Pattern/Convention Text",
+        "cancel": "Cancel",
+        "addPattern": "Add Pattern"
+      },
+      "addDocument": {
+        "title": "Add Document",
+        "text": "Text",
+        "type": "Type",
+        "category": "Category (optional)",
+        "categoryPlaceholder": "e.g. security, database",
+        "cancel": "Cancel",
+        "addDocument": "Add Document"
+      },
+      "documentTypes": {
+        "decision": "Decision",
+        "correction": "Correction",
+        "note": "Note",
+        "architecture": "Architecture",
+        "convention": "Convention"
+      }
+    },
+    "notifications": {
+      "dashboardRefreshed": "Dashboard refreshed",
+      "taskUpdated": "Current task updated",
+      "threadStateCleared": "Thread state cleared",
+      "promoted": "Promoted! Decisions: {decisions}, Patterns: {patterns}",
+      "teamMemberAdded": "Team member added",
+      "teamMemberRemoved": "Team member removed",
+      "decisionAdded": "Decision added",
+      "decisionRemoved": "Decision removed",
+      "patternAdded": "Pattern added",
+      "patternRemoved": "Pattern removed",
+      "documentAdded": "Document added",
+      "documentRemoved": "Document removed",
+      "runtimeMemoryRefreshed": "Runtime memory refreshed"
+    },
+    "errors": {
+      "enterTask": "Please enter a task",
+      "enterDecisionText": "Please enter decision text",
+      "enterPatternText": "Please enter pattern text",
+      "enterDocumentText": "Please enter document text",
+      "enterSearchQuery": "Please enter a search query",
+      "failedToRefresh": "Failed to refresh dashboard: ",
+      "failedToUpdateTask": "Failed to update task: ",
+      "failedToClear": "Failed to clear thread state: ",
+      "failedToPromote": "Failed to promote: ",
+      "failedToAddTeamMember": "Failed to add team member: ",
+      "failedToRemoveTeamMember": "Failed to remove team member: ",
+      "failedToAddDecision": "Failed to add decision: ",
+      "failedToRemoveDecision": "Failed to remove decision: ",
+      "failedToAddPattern": "Failed to add pattern: ",
+      "failedToRemovePattern": "Failed to remove pattern: ",
+      "failedToAddDocument": "Failed to add document: ",
+      "failedToRemoveDocument": "Failed to remove document: ",
+      "failedToRefreshRuntime": "Failed to refresh runtime memory: ",
+      "searchFailed": "Search failed: "
+    },
+    "confirmations": {
+      "clearThreadState": "Are you sure you want to clear the thread state?"
+    },
+    "common": {
+      "role": "Role"
+    }
+  },
+  "ru": {
+    "nav": {
+      "title": "Universal Dev Runtime",
+      "subtitle": "Управление памятью",
+      "refresh": "Обновить"
+    },
+    "stats": {
+      "decisions": "Решения",
+      "patterns": "Паттерны",
+      "documents": "Документы",
+      "teamMembers": "Участники"
+    },
+    "tabs": {
+      "threadState": "Состояние потока",
+      "sharedMemory": "Общая память",
+      "semanticSearch": "Семантический поиск",
+      "documents": "Документы",
+      "runtimeMemory": "Runtime память"
+    },
+    "threadState": {
+      "currentTask": "Текущая задача",
+      "currentTaskPlaceholder": "Введите текущую задачу...",
+      "activeArtifacts": "Активные артефакты",
+      "recentDecisions": "Последние решения",
+      "openQuestions": "Открытые вопросы",
+      "correctionNotes": "Заметки-исправления",
+      "noCurrentTask": "Нет текущей задачи",
+      "noActiveArtifacts": "Нет активных артефактов",
+      "noRecentDecisions": "Нет последних решений",
+      "noOpenQuestions": "Нет открытых вопросов",
+      "noCorrectionNotes": "Нет заметок-исправлений",
+      "clearThreadState": "Очистить состояние",
+      "promoteToShared": "Перенести в общую"
+    },
+    "sharedMemory": {
+      "teamMembers": "Команда",
+      "add": "Добавить",
+      "teamDecisions": "Решения команды",
+      "patternsConventions": "Паттерны и соглашения",
+      "noTeamMembers": "Нет участников",
+      "noTeamDecisions": "Нет решений",
+      "noPatterns": "Нет паттернов"
+    },
+    "search": {
+      "placeholder": "Поиск по памяти...",
+      "search": "Найти",
+      "noResults": "Ничего не найдено",
+      "found": "Найдено",
+      "results": "результат(ов)",
+      "for": "по запросу",
+      "match": "совпадение"
+    },
+    "documents": {
+      "semanticDocuments": "Семантические документы",
+      "addDocument": "Добавить документ",
+      "noDocuments": "Нет документов"
+    },
+    "runtimeMemory": {
+      "title": "Runtime память (авто-генерация)",
+      "refresh": "Обновить",
+      "notGenerated": "Runtime память ещё не сгенерирована."
+    },
+    "modals": {
+      "addTeamMember": {
+        "title": "Добавить участника",
+        "name": "Имя",
+        "role": "Роль",
+        "rolePlaceholder": "например, Backend разработчик",
+        "cancel": "Отмена",
+        "addMember": "Добавить"
+      },
+      "addDecision": {
+        "title": "Добавить решение",
+        "text": "Текст решения",
+        "cancel": "Отмена",
+        "addDecision": "Добавить"
+      },
+      "addPattern": {
+        "title": "Добавить паттерн",
+        "text": "Текст паттерна/соглашения",
+        "cancel": "Отмена",
+        "addPattern": "Добавить"
+      },
+      "addDocument": {
+        "title": "Добавить документ",
+        "text": "Текст",
+        "type": "Тип",
+        "category": "Категория (необязательно)",
+        "categoryPlaceholder": "например, security, database",
+        "cancel": "Отмена",
+        "addDocument": "Добавить"
+      },
+      "documentTypes": {
+        "decision": "Решение",
+        "correction": "Исправление",
+        "note": "Заметка",
+        "architecture": "Архитектура",
+        "convention": "Соглашение"
+      }
+    },
+    "notifications": {
+      "dashboardRefreshed": "Дашборд обновлён",
+      "taskUpdated": "Задача обновлена",
+      "threadStateCleared": "Состояние потока очищено",
+      "promoted": "Перенесено! Решений: {decisions}, Паттернов: {patterns}",
+      "teamMemberAdded": "Участник добавлен",
+      "teamMemberRemoved": "Участник удалён",
+      "decisionAdded": "Решение добавлено",
+      "decisionRemoved": "Решение удалено",
+      "patternAdded": "Паттерн добавлен",
+      "patternRemoved": "Паттерн удалён",
+      "documentAdded": "Документ добавлен",
+      "documentRemoved": "Документ удалён",
+      "runtimeMemoryRefreshed": "Runtime память обновлена"
+    },
+    "errors": {
+      "enterTask": "Введите задачу",
+      "enterDecisionText": "Введите текст решения",
+      "enterPatternText": "Введите текст паттерна",
+      "enterDocumentText": "Введите текст документа",
+      "enterSearchQuery": "Введите поисковый запрос",
+      "failedToRefresh": "Не удалось обновить дашборд: ",
+      "failedToUpdateTask": "Не удалось обновить задачу: ",
+      "failedToClear": "Не удалось очистить состояние: ",
+      "failedToPromote": "Не удалось перенести: ",
+      "failedToAddTeamMember": "Не удалось добавить участника: ",
+      "failedToRemoveTeamMember": "Не удалось удалить участника: ",
+      "failedToAddDecision": "Не удалось добавить решение: ",
+      "failedToRemoveDecision": "Не удалось удалить решение: ",
+      "failedToAddPattern": "Не удалось добавить паттерн: ",
+      "failedToRemovePattern": "Не удалось удалить паттерн: ",
+      "failedToAddDocument": "Не удалось добавить документ: ",
+      "failedToRemoveDocument": "Не удалось удалить документ: ",
+      "failedToRefreshRuntime": "Не удалось обновить runtime память: ",
+      "searchFailed": "Поиск не удался: "
+    },
+    "confirmations": {
+      "clearThreadState": "Вы уверены, что хотите очистить состояние потока?"
+    },
+    "common": {
+      "role": "Роль"
+    }
+  }
+}

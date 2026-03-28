@@ -10,10 +10,13 @@
   "files": [
     "src",
     "bin",
-    "templates"
+    "templates",
+    "web"
   ],
   "scripts": {
     "start": "node src/runtime-mcp.js",
+    "web": "node src/web-server.js",
+    "init-demo": "node init-demo.js",
     "test": "echo \"No tests specified\" && exit 0",
     "prepublishOnly": "chmod +x bin/qwx.js"
   },
@@ -38,7 +41,9 @@
   },
   "homepage": "https://github.com/yourusername/universal-dev-runtime#readme",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0"
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "express": "^4.18.2",
+    "cors": "^2.8.5"
   },
   "engines": {
     "node": ">=16.0.0"
