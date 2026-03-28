@@ -1,0 +1,46 @@
+{
+  "name": "universal-dev-runtime",
+  "version": "1.1.0",
+  "description": "Memory management system for Qwen Code CLI with semantic search and team collaboration",
+  "type": "module",
+  "main": "src/runtime-mcp.js",
+  "bin": {
+    "qwx": "./bin/qwx.js"
+  },
+  "files": [
+    "src",
+    "bin",
+    "templates"
+  ],
+  "scripts": {
+    "start": "node src/runtime-mcp.js",
+    "test": "echo \"No tests specified\" && exit 0",
+    "prepublishOnly": "chmod +x bin/qwx.js"
+  },
+  "keywords": [
+    "qwen",
+    "qwen-code",
+    "mcp",
+    "memory",
+    "semantic-search",
+    "team-collaboration",
+    "developer-tools",
+    "ai-assistant"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/universal-dev-runtime.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/universal-dev-runtime/issues"
+  },
+  "homepage": "https://github.com/yourusername/universal-dev-runtime#readme",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
