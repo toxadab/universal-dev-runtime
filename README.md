@@ -30,7 +30,7 @@ Works with **any tech stack**: PHP, Python, Node.js, Go, Ruby, Rust, Java, and m
 npm install -g universal-dev-runtime
 
 # Or from GitHub
-git clone https://github.com/yourusername/universal-dev-runtime.git
+git clone https://github.com/toxadab/universal-dev-runtime.git
 cd universal-dev-runtime
 npm install
 npm link
@@ -312,7 +312,7 @@ qwx "add migration for users table"
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/universal-dev-runtime.git
+git clone https://github.com/toxadab/universal-dev-runtime.git
 
 # Install dependencies
 npm install
@@ -395,4 +395,4 @@ See [CHANGELOG.md](CHANGELOG.md) for version history.
 
 - **Documentation:** [docs/](docs/)
 - **Examples:** [examples/](examples/)
-- **Issues:** https://github.com/yourusername/universal-dev-runtime/issues
+- **Issues:** https://github.com/toxadab/universal-dev-runtime/issues

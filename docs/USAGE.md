@@ -9,7 +9,7 @@
 npm install -g universal-dev-runtime
 
 # Or from source
-git clone https://github.com/yourusername/universal-dev-runtime.git
+git clone https://github.com/toxadab/universal-dev-runtime.git
 cd universal-dev-runtime
 npm install
 npm link
