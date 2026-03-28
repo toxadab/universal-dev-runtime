@@ -1,0 +1,14 @@
+{
+  "name": "universal-dev-runtime",
+  "version": "1.1.0",
+  "description": "Universal memory management for Qwen Code CLI with semantic search and team collaboration",
+  "contextFileName": "QWEN.md",
+  "mcpServers": {
+    "dev-runtime": {
+      "command": "node",
+      "args": ["${extensionPath}${/}src${/}runtime-mcp.js"],
+      "cwd": "${extensionPath}",
+      "timeout": 15000
+    }
+  }
+}
