@@ -2,10 +2,10 @@
 
 /**
  * QWX - Qwen Wrapper CLI
- * 
+ *
  * Universal wrapper for Qwen Code CLI with runtime memory management
  * Works with any tech stack
- * 
+ *
  * Usage:
  *   qwx "your prompt here"
  *   qwx --bootstrap
@@ -15,16 +15,20 @@
 
 import { execSync } from 'child_process';
 import { existsSync, readFileSync, writeFileSync } from 'fs';
-import { join, dirname, basename } from 'path';
+import { join, dirname, basename, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const ROOT_DIR = resolve(__dirname, '..');
+const TEMPLATES_DIR = join(ROOT_DIR, 'templates');
 
 const QWEN_DIR = '.qwen';
 const STATE_DIR = 'state';
 const SHARED_MEMORY_DIR = 'shared';
 const RUNTIME_MEMORY_FILE = 'runtime-memory.md';
 const CURRENT_THREAD_FILE = 'current-thread.json';
+const QWEN_MD_FILE = 'QWEN.md';
+const SETTINGS_JSON_FILE = 'settings.json';
 
 function runCommand(cmd, cwd = process.cwd()) {
   try {
@@ -192,34 +196,210 @@ function prepareRuntimePacket(cwd) {
   return runtimeMemoryPath;
 }
 
+function createQwenMarkdown(cwd, projectName) {
+  const qwenDir = getProjectQwenDir(cwd);
+  const qwenMdPath = join(qwenDir, QWEN_MD_FILE);
+  
+  // Check if QWEN.md already exists
+  if (fileExists(qwenMdPath)) {
+    // QWEN.md exists - update it to include runtime-memory.md import
+    const existingContent = readFileSync(qwenMdPath, 'utf-8');
+    
+    // Check if runtime-memory.md is already imported
+    const hasRuntimeImport = existingContent.includes('@.qwen/runtime-memory.md') || 
+                             existingContent.includes('.qwen/runtime-memory.md');
+    
+    if (!hasRuntimeImport) {
+      // Add runtime import after the first line (or at the beginning)
+      const lines = existingContent.split('\n');
+      const runtimeImport = '\n## Runtime Import\n@.qwen/runtime-memory.md\n';
+      
+      // Insert after first heading or at position 1
+      let insertIndex = 1;
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].startsWith('# ')) {
+          insertIndex = i + 1;
+          break;
+        }
+      }
+      
+      lines.splice(insertIndex, 0, runtimeImport);
+      const newContent = lines.join('\n');
+      
+      writeFileSync(qwenMdPath, newContent, 'utf-8');
+      console.log(`  → QWEN.md updated (added runtime-memory.md import)`);
+    } else {
+      console.log(`  → QWEN.md already has runtime-memory.md import`);
+    }
+    
+    return qwenMdPath;
+  }
+  
+  // QWEN.md doesn't exist - create from template
+  let template = `# ${projectName}
+
+## Runtime Import
+@.qwen/runtime-memory.md
+
+## Project Rules
+- Follow project conventions
+- Treat runtime-memory.md as active working context
+- Read correction notes before making changes
+
+## Usage
+\`\`\`bash
+# Run with automatic context
+qwx "your prompt here"
+
+# Bootstrap (if not done)
+qwx --bootstrap
+
+# Search memory
+qwx --search "query"
+
+# Web interface
+npm run web
+\`\`\`
+`;
+
+  try {
+    const templatePath = join(TEMPLATES_DIR, QWEN_MD_FILE);
+    if (existsSync(templatePath)) {
+      template = readFileSync(templatePath, 'utf-8')
+        .replace(/{{PROJECT_NAME}}/g, projectName);
+    }
+  } catch (e) {
+    // Use default template
+  }
+
+  writeFileSync(qwenMdPath, template, 'utf-8');
+  console.log(`  → QWEN.md created`);
+  return qwenMdPath;
+}
+
+function createSettingsJson(cwd) {
+  const qwenDir = getProjectQwenDir(cwd);
+  const settingsPath = join(qwenDir, SETTINGS_JSON_FILE);
+  
+  // Check if settings.json already exists
+  if (fileExists(settingsPath)) {
+    // settings.json exists - update it to include MCP server if not present
+    const existingSettings = readJsonFile(settingsPath, {});
+    
+    // Check if dev-runtime MCP server is already configured
+    const hasDevRuntime = existingSettings.mcpServers?.['dev-runtime'];
+    
+    if (!hasDevRuntime) {
+      // Add dev-runtime MCP server
+      existingSettings.mcpServers = existingSettings.mcpServers || {};
+      existingSettings.mcpServers['dev-runtime'] = {
+        "command": "node",
+        "args": [join(ROOT_DIR, 'src', 'runtime-mcp.js')],
+        "cwd": cwd,
+        "timeout": 15000
+      };
+      
+      writeJsonFile(settingsPath, existingSettings);
+      console.log(`  → settings.json updated (added dev-runtime MCP server)`);
+    } else {
+      console.log(`  → settings.json already has dev-runtime MCP server`);
+    }
+    
+    return settingsPath;
+  }
+  
+  // settings.json doesn't exist - create new
+  const settings = {
+    "context": {
+      "fileName": "QWEN.md"
+    },
+    "mcpServers": {
+      "dev-runtime": {
+        "command": "node",
+        "args": [join(ROOT_DIR, 'src', 'runtime-mcp.js')],
+        "cwd": cwd,
+        "timeout": 15000
+      }
+    },
+    "permissions": {
+      "allow": [
+        "Bash(node *)",
+        "Bash(python3 *)",
+        "Bash(pip3 install *)",
+        `Read(//${cwd.replace(/^\//, '')}/**)` ,
+        `Write(//${cwd.replace(/^\//, '')}/**)`
+      ]
+    },
+    "$version": 3
+  };
+
+  writeJsonFile(settingsPath, settings);
+  console.log(`  → settings.json created`);
+  return settingsPath;
+}
+
+function createOrUpdatePackageJson(cwd) {
+  const packageJsonPath = join(cwd, 'package.json');
+  
+  let packageJson = {};
+  
+  // Try to read existing package.json
+  try {
+    if (fileExists(packageJsonPath)) {
+      packageJson = readJsonFile(packageJsonPath, {});
+    }
+  } catch (e) {
+    // Use empty package.json
+  }
+
+  // Add web scripts if not present
+  if (!packageJson.scripts) {
+    packageJson.scripts = {};
+  }
+
+  // Add web script for universal-dev-runtime web interface
+  if (!packageJson.scripts.web) {
+    packageJson.scripts.web = 'node ' + join(ROOT_DIR, 'src', 'web-server.js');
+  }
+  
+  // Add web:port script for custom port
+  if (!packageJson.scripts['web:port']) {
+    packageJson.scripts['web:port'] = 'QWX_WEB_PORT=${QWX_WEB_PORT:-3000} node ' + join(ROOT_DIR, 'src', 'web-server.js');
+  }
+
+  writeJsonFile(packageJsonPath, packageJson);
+  return packageJsonPath;
+}
+
 function cmdBootstrap(cwd) {
   console.log('Bootstrapping project...');
-  
+
   const qwenDir = getProjectQwenDir(cwd);
   const stateDir = getStateDir(cwd);
   const sharedDir = getSharedMemoryDir(cwd);
-  
+
   if (!fileExists(qwenDir)) {
     execSync(`mkdir -p "${qwenDir}" "${stateDir}" "${sharedDir}"`, { cwd });
   }
-  
+
   const stack = detectStack(cwd);
-  
+  const projectName = basename(cwd);
+
   const manifest = {
-    name: basename(cwd),
+    name: projectName,
     path: cwd,
     stack,
     bootstrappedAt: new Date().toISOString(),
     lastIndexedAt: null,
   };
   writeJsonFile(join(stateDir, 'project-manifest.json'), manifest);
-  
+
   writeJsonFile(join(stateDir, 'artifact-index.json'), {
     files: [],
     byType: {},
     dependencies: [],
   });
-  
+
   const threadState = readJsonFile(join(stateDir, CURRENT_THREAD_FILE), {
     currentTask: null,
     activeArtifacts: [],
@@ -229,7 +409,7 @@ function cmdBootstrap(cwd) {
   });
   threadState.updatedAt = new Date().toISOString();
   writeJsonFile(join(stateDir, CURRENT_THREAD_FILE), threadState);
-  
+
   const sharedMemoryPath = join(sharedDir, 'shared-memory.json');
   if (!fileExists(sharedMemoryPath)) {
     writeJsonFile(sharedMemoryPath, {
@@ -240,7 +420,7 @@ function cmdBootstrap(cwd) {
       updatedAt: new Date().toISOString(),
     });
   }
-  
+
   const semanticIndexPath = join(sharedDir, 'semantic-index.json');
   if (!fileExists(semanticIndexPath)) {
     writeJsonFile(semanticIndexPath, {
@@ -249,11 +429,27 @@ function cmdBootstrap(cwd) {
       updatedAt: new Date().toISOString(),
     });
   }
-  
+
+  // Create QWEN.md with runtime import
+  const qwenMdPath = createQwenMarkdown(cwd, projectName);
+  console.log(`✓ QWEN.md created: ${qwenMdPath}`);
+
+  // Create settings.json with MCP server config
+  const settingsPath = createSettingsJson(cwd);
+  console.log(`✓ settings.json created: ${settingsPath}`);
+
+  // Create or update package.json with web scripts
+  const packageJsonPath = createOrUpdatePackageJson(cwd);
+  console.log(`✓ package.json updated: ${packageJsonPath}`);
+
   prepareRuntimePacket(cwd);
-  
-  console.log(`✓ Project bootstrapped: ${manifest.name}`);
+
+  console.log(`✓ Project bootstrapped: ${projectName}`);
   console.log(`  Stack: ${stack.join(', ')}`);
+  console.log('');
+  console.log('  Auto-context enabled: QWEN.md imports @.qwen/runtime-memory.md');
+  console.log('  MCP server configured: dev-runtime');
+  console.log('  Web interface: npm run web');
 }
 
 function cmdRefresh(cwd) {

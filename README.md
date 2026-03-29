@@ -394,5 +394,7 @@ See [CHANGELOG.md](CHANGELOG.md) for version history.
 ## Support
 
 - **Documentation:** [docs/](docs/)
+- **Setup Guide:** [docs/SETUP.md](docs/SETUP.md)
+- **Migration Guide:** [docs/MIGRATION.md](docs/MIGRATION.md) (for existing QWEN.md users)
 - **Examples:** [examples/](examples/)
 - **Issues:** https://github.com/toxadab/universal-dev-runtime/issues
