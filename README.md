@@ -1,6 +1,5 @@
 # Universal Dev Runtime for Qwen Code CLI
 
-[![npm version](https://img.shields.io/npm/v/universal-dev-runtime.svg)](https://www.npmjs.com/package/universal-dev-runtime)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **Memory management system for Qwen Code CLI with semantic search and team collaboration.**
@@ -26,13 +25,14 @@ Works with **any tech stack**: PHP, Python, Node.js, Go, Ruby, Rust, Java, and m
 ### Installation
 
 ```bash
-# Install globally
-npm install -g universal-dev-runtime
-
-# Or from GitHub
+# Clone from GitHub
 git clone https://github.com/toxadab/universal-dev-runtime.git
 cd universal-dev-runtime
+
+# Install dependencies
 npm install
+
+# Link globally
 npm link
 ```
 

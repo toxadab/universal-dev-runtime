@@ -5,13 +5,14 @@
 ### 1. Install
 
 ```bash
-# From npm (recommended)
-npm install -g universal-dev-runtime
-
-# Or from source
+# Clone from GitHub
 git clone https://github.com/toxadab/universal-dev-runtime.git
 cd universal-dev-runtime
+
+# Install dependencies
 npm install
+
+# Link globally
 npm link
 ```
 

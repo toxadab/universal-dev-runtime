@@ -5,7 +5,7 @@
 ### Step 1: Install Universal Dev Runtime
 
 ```bash
-# Clone repository (or install from npm)
+# Clone from GitHub
 git clone https://github.com/toxadab/universal-dev-runtime.git
 cd universal-dev-runtime
 
@@ -194,8 +194,11 @@ cat .qwen/QWEN.md | grep "Runtime Import"
 ## Quick Reference
 
 ```bash
-# Install
-npm install -g universal-dev-runtime
+# Install from GitHub
+git clone https://github.com/toxadab/universal-dev-runtime.git
+cd universal-dev-runtime
+npm install
+npm link
 
 # Bootstrap project
 qwx --bootstrap
