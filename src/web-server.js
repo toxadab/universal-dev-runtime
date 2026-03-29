@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 
 /**
- * Web Interface for Universal Dev Runtime Memory Management
+ * Web Interface for Universal Dev Runtime 2.0
  *
  * REST API + Static files for managing:
  * - Thread State
  * - Shared Memory
- * - Semantic Index
- * - Team Members
+ * - Qdrant Vector Collections
+ * - Real-time WebSocket events
  */
 
 import express from 'express';
@@ -15,6 +15,7 @@ import cors from 'cors';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname, basename, resolve } from 'path';
 import { fileURLToPath } from 'url';
+import { WebSocketServer } from 'ws';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = join(__dirname, '..');
@@ -90,111 +91,6 @@ function writeTextFile(filePath, content) {
 }
 
 // ============================================================================
-// TF-IDF Semantic Search
-// ============================================================================
-
-class SemanticSearch {
-  constructor() {
-    this.documents = [];
-    this.vocabulary = new Map();
-    this.idf = new Map();
-  }
-
-  tokenize(text) {
-    return text
-      .toLowerCase()
-      .replace(/[^\w\sа-яёa-z]/gi, ' ')
-      .split(/\s+/)
-      .filter(w => w.length > 2);
-  }
-
-  index(documents) {
-    this.documents = documents;
-    this.vocabulary.clear();
-    this.idf.clear();
-
-    const N = documents.length;
-    const df = new Map();
-
-    documents.forEach((doc, docIdx) => {
-      const tokens = this.tokenize(doc.text || '');
-      const tf = new Map();
-
-      tokens.forEach(token => {
-        if (!this.vocabulary.has(token)) {
-          this.vocabulary.set(token, this.vocabulary.size);
-        }
-        tf.set(token, (tf.get(token) || 0) + 1);
-      });
-
-      const maxFreq = Math.max(...tf.values(), 1);
-      tf.forEach((value, key) => {
-        tf.set(key, value / maxFreq);
-        df.set(key, (df.get(key) || 0) + 1);
-      });
-
-      doc.tf = tf;
-    });
-
-    this.vocabulary.forEach((_, term) => {
-      const docFreq = df.get(term) || 1;
-      this.idf.set(term, Math.log(N / docFreq) + 1);
-    });
-
-    return this;
-  }
-
-  queryVector(query) {
-    const tokens = this.tokenize(query);
-    const tf = new Map();
-
-    tokens.forEach(token => {
-      tf.set(token, (tf.get(token) || 0) + 1);
-    });
-
-    const maxFreq = Math.max(...tf.values(), 1);
-    tf.forEach((value, key) => {
-      tf.set(key, (value / maxFreq) * (this.idf.get(key) || 0));
-    });
-
-    return tf;
-  }
-
-  cosineSimilarity(vecA, vecB) {
-    let dotProduct = 0;
-    let normA = 0;
-    let normB = 0;
-
-    vecA.forEach((valueA, term) => {
-      const valueB = vecB.get(term) || 0;
-      dotProduct += valueA * valueB;
-      normA += valueA * valueA;
-    });
-
-    vecB.forEach((valueB) => {
-      normB += valueB * valueB;
-    });
-
-    if (normA === 0 || normB === 0) return 0;
-
-    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
-  }
-
-  search(query, topK = 5) {
-    const queryVec = this.queryVector(query);
-
-    const scores = this.documents.map((doc, idx) => ({
-      idx,
-      score: this.cosineSimilarity(queryVec, doc.tf || new Map()),
-      document: doc,
-    }));
-
-    scores.sort((a, b) => b.score - a.score);
-    return scores.slice(0, topK).filter(s => s.score > 0);
-  }
-}
-
-// ============================================================================
 // Memory Operations
 // ============================================================================
 
@@ -217,10 +113,10 @@ function getThreadState(cwd) {
 function updateThreadState(cwd, updates) {
   const stateDir = getStateDir(cwd);
   const threadState = getThreadState(cwd);
-  
+
   Object.assign(threadState, updates, { updatedAt: new Date().toISOString() });
   writeJsonFile(join(stateDir, CURRENT_THREAD_FILE), threadState);
-  
+
   return threadState;
 }
 
@@ -239,10 +135,10 @@ function getSharedMemory(cwd) {
 function updateSharedMemory(cwd, updates) {
   const sharedDir = getSharedMemoryDir(cwd);
   const sharedMemory = getSharedMemory(cwd);
-  
+
   Object.assign(sharedMemory, updates, { updatedAt: new Date().toISOString() });
   writeJsonFile(join(sharedDir, SHARED_MEMORY_FILE), sharedMemory);
-  
+
   return sharedMemory;
 }
 
@@ -250,48 +146,28 @@ function getSemanticIndex(cwd) {
   const sharedDir = getSharedMemoryDir(cwd);
   return readJsonFile(join(sharedDir, SEMANTIC_INDEX_FILE), {
     documents: [],
-    version: '1.0',
+    version: '2.0',
     updatedAt: null,
   });
 }
 
 function addSemanticDocument(cwd, document) {
   const semanticIndex = getSemanticIndex(cwd);
-  
+
   const doc = {
     id: document.id || `doc_${Date.now()}`,
     text: document.text,
     type: document.type || 'note',
+    collection: document.collection || 'decisions',
     metadata: document.metadata || {},
     addedAt: new Date().toISOString(),
   };
-  
+
   semanticIndex.documents.push(doc);
   semanticIndex.updatedAt = new Date().toISOString();
   writeJsonFile(join(getSharedMemoryDir(cwd), SEMANTIC_INDEX_FILE), semanticIndex);
-  
-  return doc;
-}
 
-function searchSemantic(cwd, query, topK = 10) {
-  const semanticIndex = getSemanticIndex(cwd);
-  
-  if (semanticIndex.documents.length === 0) {
-    return [];
-  }
-  
-  const searchEngine = new SemanticSearch();
-  searchEngine.index(semanticIndex.documents.map(d => ({ text: d.text })));
-  
-  const results = searchEngine.search(query, topK);
-  
-  return results.map(r => ({
-    id: r.document.id,
-    score: r.score,
-    text: r.document.text,
-    type: r.document.type,
-    metadata: r.document.metadata,
-  }));
+  return doc;
 }
 
 function getProjectManifest(cwd) {
@@ -321,10 +197,10 @@ function getRuntimeMemory(cwd) {
 function promoteToCanonical(cwd) {
   const stateDir = getStateDir(cwd);
   const sharedDir = getSharedMemoryDir(cwd);
-  
+
   const threadState = getThreadState(cwd);
   const sharedMemory = getSharedMemory(cwd);
-  
+
   if (threadState.recentDecisions) {
     threadState.recentDecisions.forEach(d => {
       if (!sharedMemory.decisions.includes(d)) {
@@ -332,7 +208,7 @@ function promoteToCanonical(cwd) {
       }
     });
   }
-  
+
   if (threadState.correctionNotes) {
     threadState.correctionNotes.forEach(n => {
       const text = typeof n === 'string' ? n : n.text;
@@ -341,16 +217,43 @@ function promoteToCanonical(cwd) {
       }
     });
   }
-  
+
   sharedMemory.updatedAt = new Date().toISOString();
   writeJsonFile(join(sharedDir, SHARED_MEMORY_FILE), sharedMemory);
-  
+
   threadState.promotedAt = new Date().toISOString();
   writeJsonFile(join(stateDir, CURRENT_THREAD_FILE), threadState);
-  
+
   return {
     decisions: sharedMemory.decisions.length,
     patterns: sharedMemory.patterns.length,
+  };
+}
+
+function getVectorStats(cwd) {
+  const semanticIndex = getSemanticIndex(cwd);
+  const documents = semanticIndex.documents || [];
+
+  // Count by collection
+  const stats = {
+    decisions: 0,
+    patterns: 0,
+    artifacts: 0,
+    tasks: 0,
+    team: 0,
+  };
+
+  documents.forEach(doc => {
+    const collection = doc.collection || 'decisions';
+    if (stats[collection] !== undefined) {
+      stats[collection]++;
+    }
+  });
+
+  return {
+    vectorStats: Object.entries(stats).map(([name, count]) => ({ name, count })),
+    totalDocuments: documents.length,
+    qdrantAvailable: false, // Local mode
   };
 }
 
@@ -360,6 +263,7 @@ function promoteToCanonical(cwd) {
 
 const app = express();
 const PORT = process.env.QWX_WEB_PORT || 3000;
+const WS_PORT = process.env.QWX_WS_PORT || 8765;
 
 app.use(cors());
 app.use(express.json());
@@ -372,7 +276,7 @@ app.use(express.static(WEB_DIR));
 // Dashboard - get all memory overview
 app.get('/api/dashboard', (req, res) => {
   const cwd = getCwdFromRequest(req);
-  
+
   res.json({
     success: true,
     data: {
@@ -434,11 +338,11 @@ app.get('/api/team', (req, res) => {
 app.post('/api/team', (req, res) => {
   const cwd = getCwdFromRequest(req);
   const { name, role } = req.body;
-  
+
   if (!name || !role) {
     return res.status(400).json({ success: false, error: 'Name and role required' });
   }
-  
+
   const sharedMemory = getSharedMemory(cwd);
   sharedMemory.team = sharedMemory.team || [];
   sharedMemory.team.push({
@@ -447,36 +351,52 @@ app.post('/api/team', (req, res) => {
     addedAt: new Date().toISOString(),
   });
   sharedMemory.updatedAt = new Date().toISOString();
-  
+
   writeJsonFile(join(getSharedMemoryDir(cwd), SHARED_MEMORY_FILE), sharedMemory);
-  
+
   res.json({ success: true, data: sharedMemory.team });
 });
 
 app.delete('/api/team/:index', (req, res) => {
   const cwd = getCwdFromRequest(req);
   const index = parseInt(req.params.index);
-  
+
   const sharedMemory = getSharedMemory(cwd);
   if (sharedMemory.team && sharedMemory.team[index]) {
     sharedMemory.team.splice(index, 1);
     sharedMemory.updatedAt = new Date().toISOString();
     writeJsonFile(join(getSharedMemoryDir(cwd), SHARED_MEMORY_FILE), sharedMemory);
   }
-  
+
   res.json({ success: true, data: sharedMemory.team });
 });
 
-// Semantic Search
+// Semantic Search (local fallback)
 app.get('/api/semantic-search', (req, res) => {
   const cwd = getCwdFromRequest(req);
   const { q, topK = 10 } = req.query;
-  
+
   if (!q) {
     return res.status(400).json({ success: false, error: 'Query required' });
   }
-  
-  const results = searchSemantic(cwd, q, parseInt(topK));
+
+  const semanticIndex = getSemanticIndex(cwd);
+  const documents = semanticIndex.documents || [];
+
+  // Simple keyword search (local fallback)
+  const queryLower = q.toLowerCase();
+  const results = documents
+    .filter(doc => doc.text.toLowerCase().includes(queryLower))
+    .slice(0, parseInt(topK))
+    .map(doc => ({
+      id: doc.id,
+      score: 0.5, // Placeholder score
+      text: doc.text,
+      type: doc.type,
+      metadata: doc.metadata,
+      collection: doc.collection,
+    }));
+
   res.json({ success: true, data: { query: q, results } });
 });
 
@@ -484,7 +404,7 @@ app.get('/api/semantic-search', (req, res) => {
 app.get('/api/semantic-documents', (req, res) => {
   const cwd = getCwdFromRequest(req);
   const semanticIndex = getSemanticIndex(cwd);
-  res.json({ success: true, data: semanticIndex.documents });
+  res.json({ success: true, data: semanticIndex.documents || [] });
 });
 
 app.post('/api/semantic-documents', (req, res) => {
@@ -496,13 +416,13 @@ app.post('/api/semantic-documents', (req, res) => {
 app.delete('/api/semantic-documents/:id', (req, res) => {
   const cwd = getCwdFromRequest(req);
   const docId = req.params.id;
-  
+
   const semanticIndex = getSemanticIndex(cwd);
-  semanticIndex.documents = semanticIndex.documents.filter(d => d.id !== docId);
+  semanticIndex.documents = (semanticIndex.documents || []).filter(d => d.id !== docId);
   semanticIndex.updatedAt = new Date().toISOString();
-  
+
   writeJsonFile(join(getSharedMemoryDir(cwd), SEMANTIC_INDEX_FILE), semanticIndex);
-  
+
   res.json({ success: true, data: semanticIndex.documents });
 });
 
@@ -510,56 +430,56 @@ app.delete('/api/semantic-documents/:id', (req, res) => {
 app.post('/api/decisions', (req, res) => {
   const cwd = getCwdFromRequest(req);
   const { text } = req.body;
-  
+
   const sharedMemory = getSharedMemory(cwd);
   sharedMemory.decisions = sharedMemory.decisions || [];
   sharedMemory.decisions.push(text);
   sharedMemory.updatedAt = new Date().toISOString();
-  
+
   writeJsonFile(join(getSharedMemoryDir(cwd), SHARED_MEMORY_FILE), sharedMemory);
-  
+
   res.json({ success: true, data: sharedMemory.decisions });
 });
 
 app.delete('/api/decisions/:index', (req, res) => {
   const cwd = getCwdFromRequest(req);
   const index = parseInt(req.params.index);
-  
+
   const sharedMemory = getSharedMemory(cwd);
   if (sharedMemory.decisions && sharedMemory.decisions[index]) {
     sharedMemory.decisions.splice(index, 1);
     sharedMemory.updatedAt = new Date().toISOString();
     writeJsonFile(join(getSharedMemoryDir(cwd), SHARED_MEMORY_FILE), sharedMemory);
   }
-  
+
   res.json({ success: true, data: sharedMemory.decisions });
 });
 
 app.post('/api/patterns', (req, res) => {
   const cwd = getCwdFromRequest(req);
   const { text } = req.body;
-  
+
   const sharedMemory = getSharedMemory(cwd);
   sharedMemory.patterns = sharedMemory.patterns || [];
   sharedMemory.patterns.push(text);
   sharedMemory.updatedAt = new Date().toISOString();
-  
+
   writeJsonFile(join(getSharedMemoryDir(cwd), SHARED_MEMORY_FILE), sharedMemory);
-  
+
   res.json({ success: true, data: sharedMemory.patterns });
 });
 
 app.delete('/api/patterns/:index', (req, res) => {
   const cwd = getCwdFromRequest(req);
   const index = parseInt(req.params.index);
-  
+
   const sharedMemory = getSharedMemory(cwd);
   if (sharedMemory.patterns && sharedMemory.patterns[index]) {
     sharedMemory.patterns.splice(index, 1);
     sharedMemory.updatedAt = new Date().toISOString();
     writeJsonFile(join(getSharedMemoryDir(cwd), SHARED_MEMORY_FILE), sharedMemory);
   }
-  
+
   res.json({ success: true, data: sharedMemory.patterns });
 });
 
@@ -589,12 +509,19 @@ app.get('/api/project', (req, res) => {
   });
 });
 
+// Vector Stats
+app.get('/api/vector-stats', (req, res) => {
+  const cwd = getCwdFromRequest(req);
+  const stats = getVectorStats(cwd);
+  res.json({ success: true, data: stats });
+});
+
 // ============================================================================
 // Start Server
 // ============================================================================
 
 app.listen(PORT, () => {
-  console.log(`🚀 Universal Dev Runtime Web Interface`);
+  console.log(`🚀 Universal Dev Runtime Web Interface v2.0`);
   console.log(`📊 Dashboard: http://localhost:${PORT}`);
   console.log(`📁 Working Directory: ${process.cwd()}`);
   console.log(``);
@@ -612,4 +539,32 @@ app.listen(PORT, () => {
   console.log(`  POST /api/decisions          - Add decision`);
   console.log(`  POST /api/patterns           - Add pattern`);
   console.log(`  POST /api/promote            - Promote thread to shared`);
+  console.log(`  GET  /api/vector-stats       - Get vector database stats`);
+  console.log(``);
+  console.log(`WebSocket: ws://localhost:${WS_PORT}`);
 });
+
+// ============================================================================
+// WebSocket Server for Real-time Events (Optional)
+// ============================================================================
+
+try {
+  const wss = new WebSocketServer({ port: WS_PORT });
+
+  wss.on('connection', (ws) => {
+    console.log('[WebSocket] Client connected');
+
+    ws.on('close', () => {
+      console.log('[WebSocket] Client disconnected');
+    });
+
+    ws.on('error', (error) => {
+      console.error('[WebSocket] Error:', error.message);
+    });
+  });
+
+  console.log(`[WebSocket] Real-time server running on ws://localhost:${WS_PORT}`);
+} catch (e) {
+  console.warn('[WebSocket] Could not start WebSocket server:', e.message);
+  console.warn('[WebSocket] Real-time features will be limited');
+}

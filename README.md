@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Memory management system for Qwen Code CLI with semantic search and team collaboration.**
+**Memory management system for Qwen Code CLI with Qdrant vector search and team collaboration.**
 
 Works with **any tech stack**: PHP, Python, Node.js, Go, Ruby, Rust, Java, and more.
 
@@ -12,15 +12,23 @@ Works with **any tech stack**: PHP, Python, Node.js, Go, Ruby, Rust, Java, and m
 
 - 🧠 **Thread State** — Instant operational memory for current task context
 - 👥 **Shared Memory** — Team decisions, patterns, and conventions
-- 🔍 **Semantic Search** — TF-IDF + cosine similarity (no external API required)
+- 🔍 **Vector Search** — Qdrant + embeddings (384 dimensions, semantic replacement)
 - 🔄 **Auto Context** — Runtime memory generated before each request
 - 🌐 **Universal** — Works with any technology stack
 - 📦 **Zero Config** — Automatic stack detection and project bootstrap
-- 🌈 **Web Interface** — Beautiful UI for managing all memory types
+- 🌈 **Web Interface** — Beautiful UI with real-time memory events
+- ⚡ **Real-time Panel** — Live visualization of memory operations
 
 ---
 
 ## Quick Start
+
+### What's New in v2.0?
+
+- **Qdrant Vector Search**: Replaced TF-IDF with 384-dimensional embeddings
+- **Semantic Replacement**: Auto-updates similar documents (no duplicates!)
+- **Real-time Events**: WebSocket panel shows memory operations live
+- **Local Fallback**: Works without Qdrant (degraded mode)
 
 ### Installation
 
@@ -85,6 +93,8 @@ http://localhost:3000
 
 ## Architecture
 
+### v2.0 Overview
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    QWEN CODE CLI                             │
@@ -111,9 +121,29 @@ http://localhost:3000
                      │
                      ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  Extract delta → persist to thread state + semantic index   │
+│  Extract delta → persist to Qdrant (with upsert)            │
+│  - Generate embedding (384 dim)                             │
+│  - Search similar (threshold 0.85)                          │
+│  - Update if similar, create if new                         │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│  WebSocket broadcast → Real-time panel                      │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+### Qdrant Collections
+
+| Collection | Purpose | Vector Size |
+|------------|---------|-------------|
+| `decisions` | Team decisions, architecture choices | 384 |
+| `patterns` | Conventions, best practices, corrections | 384 |
+| `artifacts` | File paths, code context, dependencies | 384 |
+| `tasks` | Current/past tasks with embeddings | 384 |
+| `team` | Team members, roles, expertise | 384 |
+
+### Legacy Architecture (v1.1.0)
 
 ---
 
@@ -155,19 +185,24 @@ Documents for semantic search:
 
 ## MCP Tools
 
+### v2.0 Tools
+
 | Tool | Description |
 |------|-------------|
-| `bootstrap_project` | Detect stack, create state directories |
-| `prepare_runtime_packet` | Generate runtime-memory.md |
-| `get_artifact_context` | Get artifact context |
-| `persist_delta` | Save to thread state + semantic index |
-| `promote_to_canonical` | Promote to shared memory |
-| `search_memory` | Keyword + semantic search |
-| `update_correction` | Add correction note |
-| `add_semantic_document` | Add document for search |
-| `semantic_search` | TF-IDF semantic search |
-| `add_team_member` | Add team member |
-| `get_shared_memory` | Get team memory |
+| `bootstrap_project` | Detect stack, create state directories, initialize Qdrant |
+| `prepare_runtime_packet` | Generate runtime-memory.md from current state |
+| `get_artifact_context` | Get context for a specific artifact |
+| `persist_delta` | Save changes to thread state + Qdrant (with semantic replacement) |
+| `promote_to_canonical` | Promote thread state to shared team memory |
+| `search_memory` | Keyword + vector search across all collections |
+| `semantic_search` | Vector search in a specific collection |
+| `multi_collection_search` | Vector search across multiple collections |
+| `update_correction` | Add a correction note (with semantic replacement) |
+| `add_semantic_document` | Add document to Qdrant (with semantic replacement) |
+| `add_team_member` | Add team member to shared memory and Qdrant |
+| `get_shared_memory` | Get shared team memory |
+| `get_vector_stats` | Get Qdrant vector database statistics |
+| `clear_collection` | Clear all documents from a collection |
 
 ---
 

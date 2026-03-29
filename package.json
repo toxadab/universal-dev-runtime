@@ -1,7 +1,7 @@
 {
   "name": "universal-dev-runtime",
-  "version": "1.1.0",
-  "description": "Memory management system for Qwen Code CLI with semantic search and team collaboration",
+  "version": "2.0.0",
+  "description": "Memory management system for Qwen Code CLI with Qdrant vector search and team collaboration",
   "type": "module",
   "main": "src/runtime-mcp.js",
   "bin": {
@@ -26,6 +26,8 @@
     "mcp",
     "memory",
     "semantic-search",
+    "vector-search",
+    "qdrant",
     "team-collaboration",
     "developer-tools",
     "ai-assistant"
@@ -34,18 +36,21 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/universal-dev-runtime.git"
+    "url": "https://github.com/toxadab/universal-dev-runtime.git"
   },
   "bugs": {
-    "url": "https://github.com/yourusername/universal-dev-runtime/issues"
+    "url": "https://github.com/toxadab/universal-dev-runtime/issues"
   },
-  "homepage": "https://github.com/yourusername/universal-dev-runtime#readme",
+  "homepage": "https://github.com/toxadab/universal-dev-runtime#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
+    "@qdrant/js-client-rest": "^1.9.0",
+    "@xenova/transformers": "^2.17.2",
+    "cors": "^2.8.5",
     "express": "^4.18.2",
-    "cors": "^2.8.5"
+    "ws": "^8.18.0"
   },
   "engines": {
-    "node": ">=16.0.0"
+    "node": ">=18.0.0"
   }
 }

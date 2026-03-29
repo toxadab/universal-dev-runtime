@@ -1,17 +1,16 @@
 #!/usr/bin/env node
 
 /**
- * Universal Dev Runtime MCP Server v2.0
- *
- * Memory management system for Qwen Code CLI with Qdrant vector search
+ * Universal Dev Runtime MCP Server
+ * 
+ * A universal memory management system for Qwen Code CLI
  * Works with any tech stack: PHP, Python, Node.js, Go, Ruby, etc.
- *
+ * 
  * Features:
  * - Thread state management (instant operational memory)
  * - Shared team memory (collaborative decisions & patterns)
- * - Vector search (Qdrant + embeddings, 384 dimensions)
- * - Semantic replacement (auto-update similar documents)
- * - Real-time WebSocket events
+ * - Semantic search (TF-IDF + cosine similarity, no external API)
+ * - Runtime context generation
  */
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -23,10 +22,6 @@ import {
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
-import { WebSocketServer } from 'ws';
-
-import { QdrantManager, QdrantDocumentStore } from './qdrant-client.js';
-import { getEmbeddingPipeline, cosineSimilarity } from './embeddings.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -42,25 +37,10 @@ const CURRENT_THREAD_FILE = 'current-thread.json';
 const PROJECT_MANIFEST_FILE = 'project-manifest.json';
 const ARTIFACT_INDEX_FILE = 'artifact-index.json';
 const SHARED_MEMORY_FILE = 'shared-memory.json';
-
-// Qdrant collections
-const COLLECTION_DECISIONS = 'decisions';
-const COLLECTION_PATTERNS = 'patterns';
-const COLLECTION_ARTIFACTS = 'artifacts';
-const COLLECTION_TASKS = 'tasks';
-const COLLECTION_TEAM = 'team';
+const SEMANTIC_INDEX_FILE = 'semantic-index.json';
 
 // ============================================================================
-// Global State
-// ============================================================================
-
-const qdrantManager = new QdrantManager();
-const embeddingPipeline = getEmbeddingPipeline();
-const projectStores = new Map(); // projectId -> QdrantDocumentStore
-const wssClients = new Set(); // WebSocket clients for real-time
-
-// ============================================================================
-// State Management (Local Files)
+// State Management
 // ============================================================================
 
 function getProjectQwenDir(cwd) {
@@ -115,101 +95,165 @@ function writeTextFile(filePath, content) {
 }
 
 // ============================================================================
-// Project ID Generation
-// ============================================================================
-
-function getProjectId(cwd) {
-  // Use cwd path hash as project ID
-  let hash = 0;
-  for (let i = 0; i < cwd.length; i++) {
-    const char = cwd.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
-  }
-  return `proj_${Math.abs(hash).toString(36)}`;
-}
-
-function getDocumentStore(cwd) {
-  const projectId = getProjectId(cwd);
-  if (!projectStores.has(projectId)) {
-    projectStores.set(projectId, new QdrantDocumentStore(qdrantManager, projectId));
-  }
-  return projectStores.get(projectId);
-}
-
-// ============================================================================
 // Stack Detection (Universal - supports multiple tech stacks)
 // ============================================================================
 
 function detectStack(cwd) {
   const stack = [];
-
+  
   const checkFile = (filename) => existsSync(join(cwd, filename));
   const checkDir = (dirname) => existsSync(join(cwd, dirname));
-
+  
   // PHP
   if (checkFile('composer.json')) stack.push('php');
   if (checkFile('symfony.lock')) stack.push('symfony');
   if (checkFile('laravel.lock')) stack.push('laravel');
-
+  
   // Node.js / JavaScript
   if (checkFile('package.json')) stack.push('node');
   if (checkFile('yarn.lock')) stack.push('yarn');
   if (checkFile('pnpm-lock.yaml')) stack.push('pnpm');
   if (checkFile('tsconfig.json')) stack.push('typescript');
-
+  
   // Python
   if (checkFile('requirements.txt')) stack.push('python');
   if (checkFile('pyproject.toml')) stack.push('python-poetry');
   if (checkFile('Pipfile')) stack.push('pipenv');
   if (checkFile('manage.py')) stack.push('django');
   if (checkFile('app.py') || checkFile('main.py')) stack.push('flask-fastapi');
-
+  
   // Go
   if (checkFile('go.mod')) stack.push('go');
-
+  
   // Ruby
   if (checkFile('Gemfile')) stack.push('ruby');
   if (checkFile('Gemfile.lock')) stack.push('bundler');
   if (checkFile('config.ru')) stack.push('rack');
-
+  
   // Java / Kotlin
   if (checkFile('pom.xml')) stack.push('maven');
   if (checkFile('build.gradle') || checkFile('build.gradle.kts')) stack.push('gradle');
-
+  
   // Rust
   if (checkFile('Cargo.toml')) stack.push('rust');
   if (checkFile('Cargo.lock')) stack.push('rust-cargo');
-
+  
   // Infrastructure
   if (checkFile('Dockerfile')) stack.push('docker');
   if (checkFile('compose.yaml') || checkFile('docker-compose.yml')) stack.push('docker-compose');
   if (checkFile('main.tf')) stack.push('terraform');
-
+  
   // Version Control
   if (checkDir('.git')) stack.push('git');
-
+  
   // Build Tools
   if (checkFile('Makefile')) stack.push('make');
-
+  
   return stack.length > 0 ? stack : ['unknown'];
 }
 
 // ============================================================================
-// Real-time Event Broadcasting
+// TF-IDF Semantic Search Implementation
 // ============================================================================
 
-function broadcastEvent(event) {
-  const message = JSON.stringify({
-    type: 'memory-event',
-    timestamp: new Date().toISOString(),
-    ...event,
-  });
+class SemanticSearch {
+  constructor() {
+    this.documents = [];
+    this.vocabulary = new Map();
+    this.idf = new Map();
+  }
 
-  for (const client of wssClients) {
-    if (client.readyState === 1) { // WebSocket.OPEN
-      client.send(message);
-    }
+  tokenize(text) {
+    return text
+      .toLowerCase()
+      .replace(/[^\w\sа-яёa-z]/gi, ' ')
+      .split(/\s+/)
+      .filter(w => w.length > 2);
+  }
+
+  index(documents) {
+    this.documents = documents;
+    this.vocabulary.clear();
+    this.idf.clear();
+
+    const N = documents.length;
+    const df = new Map();
+
+    documents.forEach((doc, docIdx) => {
+      const tokens = this.tokenize(doc.text || '');
+      const tf = new Map();
+
+      tokens.forEach(token => {
+        if (!this.vocabulary.has(token)) {
+          this.vocabulary.set(token, this.vocabulary.size);
+        }
+        tf.set(token, (tf.get(token) || 0) + 1);
+      });
+
+      const maxFreq = Math.max(...tf.values(), 1);
+      tf.forEach((value, key) => {
+        tf.set(key, value / maxFreq);
+        df.set(key, (df.get(key) || 0) + 1);
+      });
+
+      doc.tf = tf;
+    });
+
+    this.vocabulary.forEach((_, term) => {
+      const docFreq = df.get(term) || 1;
+      this.idf.set(term, Math.log(N / docFreq) + 1);
+    });
+
+    return this;
+  }
+
+  queryVector(query) {
+    const tokens = this.tokenize(query);
+    const tf = new Map();
+
+    tokens.forEach(token => {
+      tf.set(token, (tf.get(token) || 0) + 1);
+    });
+
+    const maxFreq = Math.max(...tf.values(), 1);
+    tf.forEach((value, key) => {
+      tf.set(key, (value / maxFreq) * (this.idf.get(key) || 0));
+    });
+
+    return tf;
+  }
+
+  cosineSimilarity(vecA, vecB) {
+    let dotProduct = 0;
+    let normA = 0;
+    let normB = 0;
+
+    vecA.forEach((valueA, term) => {
+      const valueB = vecB.get(term) || 0;
+      dotProduct += valueA * valueB;
+      normA += valueA * valueA;
+    });
+
+    vecB.forEach((valueB) => {
+      normB += valueB * valueB;
+    });
+
+    if (normA === 0 || normB === 0) return 0;
+
+    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+  }
+
+  search(query, topK = 5) {
+    const queryVec = this.queryVector(query);
+    
+    const scores = this.documents.map((doc, idx) => ({
+      idx,
+      score: this.cosineSimilarity(queryVec, doc.tf || new Map()),
+      document: doc,
+    }));
+
+    scores.sort((a, b) => b.score - a.score);
+    return scores.slice(0, topK).filter(s => s.score > 0);
   }
 }
 
@@ -217,34 +261,31 @@ function broadcastEvent(event) {
 // Tool Implementations
 // ============================================================================
 
-async function bootstrapProject(cwd) {
+function bootstrapProject(cwd) {
   const qwenDir = getProjectQwenDir(cwd);
   const stateDir = getStateDir(cwd);
   const sharedDir = getSharedMemoryDir(cwd);
-
+  
   ensureDir(qwenDir);
   ensureDir(stateDir);
   ensureDir(sharedDir);
-
+  
   const stack = detectStack(cwd);
-  const projectId = getProjectId(cwd);
-
+  
   const manifest = {
     name: basename(cwd),
     path: cwd,
     stack,
-    projectId,
     bootstrappedAt: new Date().toISOString(),
     lastIndexedAt: null,
-    version: '2.0',
   };
-
+  
   const artifactIndex = {
     files: [],
     byType: {},
     dependencies: [],
   };
-
+  
   const threadState = {
     currentTask: null,
     activeArtifacts: [],
@@ -263,25 +304,20 @@ async function bootstrapProject(cwd) {
     updatedAt: new Date().toISOString(),
   };
 
+  const semanticIndex = {
+    documents: [],
+    version: '1.0',
+    updatedAt: new Date().toISOString(),
+  };
+  
   writeJsonFile(join(stateDir, PROJECT_MANIFEST_FILE), manifest);
   writeJsonFile(join(stateDir, ARTIFACT_INDEX_FILE), artifactIndex);
   writeJsonFile(join(stateDir, CURRENT_THREAD_FILE), threadState);
   writeJsonFile(join(sharedDir, SHARED_MEMORY_FILE), sharedMemory);
-
-  // Initialize Qdrant
-  await qdrantManager.initialize();
-  await embeddingPipeline.initialize();
-
-  const runtimeMemoryPath = join(qwenDir, RUNTIME_MEMORY_FILE);
-  const content = generateRuntimeMemoryMarkdown(threadState, manifest, artifactIndex, sharedMemory);
-  writeTextFile(runtimeMemoryPath, content);
-
-  broadcastEvent({
-    event: 'bootstrap',
-    projectId,
-    stack,
-  });
-
+  writeJsonFile(join(sharedDir, SEMANTIC_INDEX_FILE), semanticIndex);
+  
+  writeTextFile(join(qwenDir, RUNTIME_MEMORY_FILE), generateRuntimeMemoryMarkdown(threadState, manifest, artifactIndex, sharedMemory));
+  
   return {
     success: true,
     manifest,
@@ -289,20 +325,20 @@ async function bootstrapProject(cwd) {
   };
 }
 
-async function prepareRuntimePacket(cwd) {
+function prepareRuntimePacket(cwd) {
   const qwenDir = getProjectQwenDir(cwd);
   const stateDir = getStateDir(cwd);
   const sharedDir = getSharedMemoryDir(cwd);
-
+  
   const threadState = readJsonFile(join(stateDir, CURRENT_THREAD_FILE), {});
   const manifest = readJsonFile(join(stateDir, PROJECT_MANIFEST_FILE), {});
   const artifactIndex = readJsonFile(join(stateDir, ARTIFACT_INDEX_FILE), {});
   const sharedMemory = readJsonFile(join(sharedDir, SHARED_MEMORY_FILE), {});
-
+  
   const runtimeMemoryPath = join(qwenDir, RUNTIME_MEMORY_FILE);
   const content = generateRuntimeMemoryMarkdown(threadState, manifest, artifactIndex, sharedMemory);
   writeTextFile(runtimeMemoryPath, content);
-
+  
   return {
     success: true,
     runtimeMemoryPath,
@@ -323,65 +359,65 @@ function generateRuntimeMemoryMarkdown(threadState, manifest, artifactIndex, sha
     `**Generated:** ${new Date().toISOString()}`,
     '',
   ];
-
+  
   if (threadState.currentTask) {
     lines.push('## Current Task');
     lines.push('');
     lines.push(threadState.currentTask);
     lines.push('');
   }
-
+  
   if (threadState.activeArtifacts && threadState.activeArtifacts.length > 0) {
     lines.push('## Active Artifacts');
     lines.push('');
     threadState.activeArtifacts.forEach(a => lines.push(`- ${a}`));
     lines.push('');
   }
-
+  
   if (threadState.recentDecisions && threadState.recentDecisions.length > 0) {
     lines.push('## Recent Decisions');
     lines.push('');
     threadState.recentDecisions.forEach(d => lines.push(`- ${d}`));
     lines.push('');
   }
-
+  
   if (threadState.openQuestions && threadState.openQuestions.length > 0) {
     lines.push('## Open Questions');
     lines.push('');
     threadState.openQuestions.forEach(q => lines.push(`- ${q}`));
     lines.push('');
   }
-
+  
   // Shared Team Memory
   if (sharedMemory && (sharedMemory.team?.length > 0 || sharedMemory.decisions?.length > 0 || sharedMemory.patterns?.length > 0)) {
     lines.push('## Team Memory');
     lines.push('');
-
+    
     if (sharedMemory.team && sharedMemory.team.length > 0) {
       lines.push('### Team Members');
       sharedMemory.team.forEach(m => lines.push(`- ${m.name} (${m.role})`));
       lines.push('');
     }
-
+    
     if (sharedMemory.decisions && sharedMemory.decisions.length > 0) {
       lines.push('### Team Decisions');
       sharedMemory.decisions.forEach(d => lines.push(`- ${d}`));
       lines.push('');
     }
-
+    
     if (sharedMemory.patterns && sharedMemory.patterns.length > 0) {
       lines.push('### Patterns & Conventions');
       sharedMemory.patterns.forEach(p => lines.push(`- ${p}`));
       lines.push('');
     }
-
+    
     if (sharedMemory.integrations && sharedMemory.integrations.length > 0) {
       lines.push('### Integrations');
       sharedMemory.integrations.forEach(i => lines.push(`- ${i}`));
       lines.push('');
     }
   }
-
+  
   if (manifest && manifest.name) {
     lines.push('## Project');
     lines.push('');
@@ -391,7 +427,7 @@ function generateRuntimeMemoryMarkdown(threadState, manifest, artifactIndex, sha
     }
     lines.push('');
   }
-
+  
   if (threadState.correctionNotes && threadState.correctionNotes.length > 0) {
     lines.push('## Correction Notes');
     lines.push('');
@@ -400,145 +436,88 @@ function generateRuntimeMemoryMarkdown(threadState, manifest, artifactIndex, sha
     });
     lines.push('');
   }
-
+  
   return lines.join('\n');
 }
 
-async function addSemanticDocument(cwd, document) {
-  const store = getDocumentStore(cwd);
-  const collection = document.collection || COLLECTION_DECISIONS;
-
-  // Generate embedding
-  const embedding = await embeddingPipeline.embed(document.text);
-
+function addSemanticDocument(cwd, document) {
+  const sharedDir = getSharedMemoryDir(cwd);
+  const semanticIndexPath = join(sharedDir, SEMANTIC_INDEX_FILE);
+  const semanticIndex = readJsonFile(semanticIndexPath, { documents: [], version: '1.0' });
+  
   const doc = {
-    id: document.id,
+    id: document.id || `doc_${Date.now()}`,
     text: document.text,
     type: document.type || 'note',
     metadata: document.metadata || {},
-    collection,
+    addedAt: new Date().toISOString(),
   };
-
-  const result = await store.upsert(collection, doc, embedding, {
-    similarityThreshold: 0.85,
-  });
-
-  broadcastEvent({
-    event: 'document_added',
-    collection,
-    documentId: result.id,
-    action: result.action,
-  });
-
+  
+  semanticIndex.documents.push(doc);
+  semanticIndex.updatedAt = new Date().toISOString();
+  
+  writeJsonFile(semanticIndexPath, semanticIndex);
+  
   return {
     success: true,
-    documentId: result.id,
-    action: result.action,
-    message: `Document ${result.action} in ${collection}`,
+    documentId: doc.id,
+    message: 'Document added to semantic index',
   };
 }
 
-async function semanticSearch(cwd, query, options = {}) {
-  const store = getDocumentStore(cwd);
-  const collection = options.collection || COLLECTION_DECISIONS;
-  const topK = options.topK || 10;
-  const minScore = options.minScore || 0.3;
-
-  // Generate query embedding
-  const queryEmbedding = await embeddingPipeline.embed(query);
-
-  // Search in Qdrant
-  const results = await store.search(collection, queryEmbedding, {
-    limit: topK,
-    minScore,
-  });
-
-  broadcastEvent({
-    event: 'search_performed',
-    query,
-    collection,
-    resultCount: results.length,
-  });
-
+function semanticSearch(cwd, query, options = {}) {
+  const sharedDir = getSharedMemoryDir(cwd);
+  const semanticIndexPath = join(sharedDir, SEMANTIC_INDEX_FILE);
+  const semanticIndex = readJsonFile(semanticIndexPath, { documents: [] });
+  
+  if (semanticIndex.documents.length === 0) {
+    return {
+      success: true,
+      results: [],
+      message: 'No documents indexed',
+    };
+  }
+  
+  const searchEngine = new SemanticSearch();
+  searchEngine.index(semanticIndex.documents.map(d => ({ text: d.text })));
+  
+  const topK = options.topK || 5;
+  const results = searchEngine.search(query, topK);
+  
   return {
     success: true,
     query,
     results: results.map(r => ({
-      id: r.id,
+      id: r.document.id,
       score: r.score,
-      text: r.payload.text,
-      type: r.payload.type,
-      metadata: r.payload.metadata,
-      version: r.payload.version,
-      updatedAt: r.payload.updatedAt,
+      text: r.document.text,
+      type: r.document.type,
+      metadata: r.document.metadata,
     })),
-    vectorSearch: true,
+    totalDocuments: semanticIndex.documents.length,
   };
 }
 
-async function multiCollectionSearch(cwd, query, options = {}) {
-  const store = getDocumentStore(cwd);
-  const collections = options.collections || [COLLECTION_DECISIONS, COLLECTION_PATTERNS, COLLECTION_ARTIFACTS, COLLECTION_TASKS];
-  const topK = options.topK || 5;
-  const minScore = options.minScore || 0.3;
-
-  // Generate query embedding
-  const queryEmbedding = await embeddingPipeline.embed(query);
-
-  // Search in all collections
-  const allResults = [];
-  for (const collection of collections) {
-    const results = await store.search(collection, queryEmbedding, {
-      limit: topK,
-      minScore,
-    });
-    allResults.push({
-      collection,
-      results: results.map(r => ({
-        id: r.id,
-        score: r.score,
-        text: r.payload.text,
-        type: r.payload.type,
-        metadata: r.payload.metadata,
-      })),
-    });
-  }
-
-  broadcastEvent({
-    event: 'multi_search_performed',
-    query,
-    collections: collections,
-    totalResults: allResults.reduce((sum, r) => sum + r.results.length, 0),
-  });
-
-  return {
-    success: true,
-    query,
-    results: allResults,
-    vectorSearch: true,
-  };
-}
-
-async function getArtifactContext(cwd, artifactPath) {
+function getArtifactContext(cwd, artifactPath) {
   const stateDir = getStateDir(cwd);
   const artifactIndex = readJsonFile(join(stateDir, ARTIFACT_INDEX_FILE), { files: [], byType: {} });
-
+  
   const artifact = artifactIndex.files.find(f => f.path === artifactPath);
-
+  
   if (!artifact) {
     return {
       found: false,
       message: `Artifact not found: ${artifactPath}`,
     };
   }
-
+  
   return {
     found: true,
     artifact,
   };
 }
 
-async function persistDelta(cwd, delta) {
+function persistDelta(cwd, delta) {
   const stateDir = getStateDir(cwd);
   const threadStatePath = join(stateDir, CURRENT_THREAD_FILE);
   const threadState = readJsonFile(threadStatePath, {
@@ -548,7 +527,7 @@ async function persistDelta(cwd, delta) {
     openQuestions: [],
     correctionNotes: [],
   });
-
+  
   if (delta.currentTask) threadState.currentTask = delta.currentTask;
   if (delta.activeArtifacts) {
     threadState.activeArtifacts = [...new Set([...threadState.activeArtifacts, ...delta.activeArtifacts])];
@@ -562,55 +541,44 @@ async function persistDelta(cwd, delta) {
   if (delta.correctionNotes) {
     threadState.correctionNotes = [...delta.correctionNotes, ...threadState.correctionNotes].slice(0, 20);
   }
-
+  
   threadState.updatedAt = new Date().toISOString();
   writeJsonFile(threadStatePath, threadState);
-
-  // Add to Qdrant (semantic replacement enabled)
-  const store = getDocumentStore(cwd);
-  const newDocs = [];
-
-  if (delta.recentDecisions) {
-    for (const decision of delta.recentDecisions) {
-      const embedding = await embeddingPipeline.embed(decision);
-      const result = await store.upsert(COLLECTION_DECISIONS, {
-        text: decision,
-        type: 'decision',
-      }, embedding, { similarityThreshold: 0.85 });
-
-      newDocs.push({ collection: COLLECTION_DECISIONS, ...result });
+  
+  // Add to semantic index
+  if (delta.recentDecisions || delta.correctionNotes) {
+    const newDocs = [];
+    if (delta.recentDecisions) {
+      delta.recentDecisions.forEach((d, i) => {
+        newDocs.push({
+          id: `decision_${Date.now()}_${i}`,
+          text: d,
+          type: 'decision',
+        });
+      });
     }
-  }
-
-  if (delta.correctionNotes) {
-    for (const note of delta.correctionNotes) {
-      const text = typeof note === 'string' ? note : note.text;
-      const embedding = await embeddingPipeline.embed(text);
-      const result = await store.upsert(COLLECTION_PATTERNS, {
-        text,
-        type: 'correction',
-      }, embedding, { similarityThreshold: 0.85 });
-
-      newDocs.push({ collection: COLLECTION_PATTERNS, ...result });
+    if (delta.correctionNotes) {
+      delta.correctionNotes.forEach((n, i) => {
+        newDocs.push({
+          id: `correction_${Date.now()}_${i}`,
+          text: typeof n === 'string' ? n : n.text,
+          type: 'correction',
+        });
+      });
     }
+    newDocs.forEach(doc => addSemanticDocument(cwd, doc));
   }
-
-  broadcastEvent({
-    event: 'delta_persisted',
-    documents: newDocs,
-  });
-
+  
   return {
     success: true,
-    message: 'Delta persisted to thread state and Qdrant',
-    documents: newDocs,
+    message: 'Delta persisted to thread state',
   };
 }
 
-async function promoteToCanonical(cwd) {
+function promoteToCanonical(cwd) {
   const stateDir = getStateDir(cwd);
   const sharedDir = getSharedMemoryDir(cwd);
-
+  
   const threadState = readJsonFile(join(stateDir, CURRENT_THREAD_FILE), {});
   const sharedMemory = readJsonFile(join(sharedDir, SHARED_MEMORY_FILE), {
     team: [],
@@ -619,7 +587,7 @@ async function promoteToCanonical(cwd) {
     integrations: [],
     conventions: [],
   });
-
+  
   // Promote decisions
   if (threadState.recentDecisions) {
     threadState.recentDecisions.forEach(d => {
@@ -628,7 +596,7 @@ async function promoteToCanonical(cwd) {
       }
     });
   }
-
+  
   // Promote correction notes to patterns
   if (threadState.correctionNotes) {
     threadState.correctionNotes.forEach(n => {
@@ -638,19 +606,13 @@ async function promoteToCanonical(cwd) {
       }
     });
   }
-
+  
   sharedMemory.updatedAt = new Date().toISOString();
   writeJsonFile(join(sharedDir, SHARED_MEMORY_FILE), sharedMemory);
-
+  
   threadState.promotedAt = new Date().toISOString();
   writeJsonFile(join(stateDir, CURRENT_THREAD_FILE), threadState);
-
-  broadcastEvent({
-    event: 'promoted_to_canonical',
-    decisionsCount: sharedMemory.decisions.length,
-    patternsCount: sharedMemory.patterns.length,
-  });
-
+  
   return {
     success: true,
     message: 'Thread state promoted to shared team memory',
@@ -661,33 +623,33 @@ async function promoteToCanonical(cwd) {
   };
 }
 
-async function searchMemory(cwd, query, options = {}) {
+function searchMemory(cwd, query, options = {}) {
   const stateDir = getStateDir(cwd);
   const sharedDir = getSharedMemoryDir(cwd);
-
+  
   const threadState = readJsonFile(join(stateDir, CURRENT_THREAD_FILE), {});
   const manifest = readJsonFile(join(stateDir, PROJECT_MANIFEST_FILE), {});
   const sharedMemory = readJsonFile(join(sharedDir, SHARED_MEMORY_FILE), {});
-
+  
   const results = {
     keyword: [],
     semantic: [],
     shared: [],
   };
-
+  
   const queryLower = query.toLowerCase();
-
+  
   // Keyword search in thread state
   if (threadState.currentTask && threadState.currentTask.toLowerCase().includes(queryLower)) {
     results.keyword.push({ type: 'currentTask', value: threadState.currentTask });
   }
-
+  
   for (const decision of (threadState.recentDecisions || [])) {
     if (decision.toLowerCase().includes(queryLower)) {
       results.keyword.push({ type: 'decision', value: decision });
     }
   }
-
+  
   // Search shared memory
   if (sharedMemory.decisions) {
     for (const decision of sharedMemory.decisions) {
@@ -696,7 +658,7 @@ async function searchMemory(cwd, query, options = {}) {
       }
     }
   }
-
+  
   if (sharedMemory.patterns) {
     for (const pattern of sharedMemory.patterns) {
       if (pattern.toLowerCase().includes(queryLower)) {
@@ -704,14 +666,11 @@ async function searchMemory(cwd, query, options = {}) {
       }
     }
   }
-
-  // Vector search across all collections
-  const vectorResult = await multiCollectionSearch(cwd, query, {
-    collections: [COLLECTION_DECISIONS, COLLECTION_PATTERNS, COLLECTION_TASKS],
-    topK: options.topK || 5,
-  });
-  results.semantic = vectorResult.results;
-
+  
+  // Semantic search
+  const semanticResult = semanticSearch(cwd, query, { topK: options.topK || 3 });
+  results.semantic = semanticResult.results || [];
+  
   return {
     success: true,
     query,
@@ -719,11 +678,11 @@ async function searchMemory(cwd, query, options = {}) {
   };
 }
 
-async function updateCorrection(cwd, note) {
+function updateCorrection(cwd, note) {
   const stateDir = getStateDir(cwd);
   const threadStatePath = join(stateDir, CURRENT_THREAD_FILE);
   const threadState = readJsonFile(threadStatePath, { correctionNotes: [] });
-
+  
   threadState.correctionNotes = threadState.correctionNotes || [];
   threadState.correctionNotes.unshift({
     text: note,
@@ -731,34 +690,24 @@ async function updateCorrection(cwd, note) {
   });
   threadState.correctionNotes = threadState.correctionNotes.slice(0, 20);
   threadState.updatedAt = new Date().toISOString();
-
+  
   writeJsonFile(threadStatePath, threadState);
-
-  // Add to Qdrant
-  const store = getDocumentStore(cwd);
-  const embedding = await embeddingPipeline.embed(note);
-  const result = await store.upsert(COLLECTION_PATTERNS, {
+  
+  addSemanticDocument(cwd, {
     text: note,
     type: 'correction',
-  }, embedding, { similarityThreshold: 0.85 });
-
-  broadcastEvent({
-    event: 'correction_added',
-    documentId: result.id,
-    action: result.action,
   });
-
+  
   return {
     success: true,
     message: 'Correction note added',
-    documentId: result.id,
   };
 }
 
-async function addTeamMember(cwd, member) {
+function addTeamMember(cwd, member) {
   const sharedDir = getSharedMemoryDir(cwd);
   const sharedMemory = readJsonFile(join(sharedDir, SHARED_MEMORY_FILE), { team: [] });
-
+  
   sharedMemory.team = sharedMemory.team || [];
   sharedMemory.team.push({
     name: member.name,
@@ -766,85 +715,22 @@ async function addTeamMember(cwd, member) {
     addedAt: new Date().toISOString(),
   });
   sharedMemory.updatedAt = new Date().toISOString();
-
+  
   writeJsonFile(join(sharedDir, SHARED_MEMORY_FILE), sharedMemory);
-
-  // Add to Qdrant team collection
-  const store = getDocumentStore(cwd);
-  const memberText = `${member.name} - ${member.role}`;
-  const embedding = await embeddingPipeline.embed(memberText);
-  const result = await store.upsert(COLLECTION_TEAM, {
-    text: memberText,
-    type: 'member',
-    name: member.name,
-    role: member.role,
-  }, embedding, { similarityThreshold: 0.9 }); // Higher threshold for team members
-
-  broadcastEvent({
-    event: 'team_member_added',
-    member: member.name,
-    documentId: result.id,
-  });
-
+  
   return {
     success: true,
     message: `Team member ${member.name} added`,
-    documentId: result.id,
   };
 }
 
-async function getSharedMemory(cwd) {
+function getSharedMemory(cwd) {
   const sharedDir = getSharedMemoryDir(cwd);
   const sharedMemory = readJsonFile(join(sharedDir, SHARED_MEMORY_FILE), {});
-
+  
   return {
     success: true,
     sharedMemory,
-  };
-}
-
-async function getVectorStats(cwd) {
-  const store = getDocumentStore(cwd);
-
-  // Get counts from all collections
-  const stats = {};
-  for (const collection of [COLLECTION_DECISIONS, COLLECTION_PATTERNS, COLLECTION_ARTIFACTS, COLLECTION_TASKS, COLLECTION_TEAM]) {
-    try {
-      const docs = await store.list(collection);
-      stats[collection] = { count: docs.length };
-    } catch (e) {
-      stats[collection] = { count: 0, error: e.message };
-    }
-  }
-
-  // Get embedding cache stats
-  const embeddingStats = embeddingPipeline.getCacheStats();
-
-  return {
-    success: true,
-    vectorStats: stats,
-    embeddingStats,
-    qdrantAvailable: qdrantManager.isAvailable(),
-  };
-}
-
-async function clearCollection(cwd, collection) {
-  const store = getDocumentStore(cwd);
-  const docs = await store.list(collection);
-
-  for (const doc of docs) {
-    await store.delete(collection, doc.id);
-  }
-
-  broadcastEvent({
-    event: 'collection_cleared',
-    collection,
-    deletedCount: docs.length,
-  });
-
-  return {
-    success: true,
-    deletedCount: docs.length,
   };
 }
 
@@ -855,7 +741,7 @@ async function clearCollection(cwd, collection) {
 const server = new Server(
   {
     name: 'universal-dev-runtime',
-    version: '2.0.0',
+    version: '1.1.0',
   },
   {
     capabilities: {
@@ -869,7 +755,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     tools: [
       {
         name: 'bootstrap_project',
-        description: 'Bootstrap a project: detect stack, create state directories and files, initialize Qdrant',
+        description: 'Bootstrap a project: detect stack, create state directories and files',
         inputSchema: {
           type: 'object',
           properties: {
@@ -901,7 +787,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'persist_delta',
-        description: 'Save changes to thread state and Qdrant (with semantic replacement)',
+        description: 'Save changes to thread state and semantic index',
         inputSchema: {
           type: 'object',
           properties: {
@@ -932,49 +818,20 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'search_memory',
-        description: 'Search with keyword + vector search across all collections',
+        description: 'Search with keyword + semantic search',
         inputSchema: {
           type: 'object',
           properties: {
             cwd: { type: 'string', description: 'Working directory' },
             query: { type: 'string', description: 'Search query' },
             topK: { type: 'number', description: 'Number of results' },
-          },
-          required: ['cwd', 'query'],
-        },
-      },
-      {
-        name: 'semantic_search',
-        description: 'Vector search in a specific collection using Qdrant',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            cwd: { type: 'string', description: 'Working directory' },
-            query: { type: 'string', description: 'Search query' },
-            collection: { type: 'string', enum: ['decisions', 'patterns', 'artifacts', 'tasks', 'team'], description: 'Collection to search' },
-            topK: { type: 'number', description: 'Number of results' },
-            minScore: { type: 'number', description: 'Minimum similarity score' },
-          },
-          required: ['cwd', 'query'],
-        },
-      },
-      {
-        name: 'multi_collection_search',
-        description: 'Vector search across multiple collections',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            cwd: { type: 'string', description: 'Working directory' },
-            query: { type: 'string', description: 'Search query' },
-            collections: { type: 'array', items: { type: 'string' }, description: 'Collections to search' },
-            topK: { type: 'number', description: 'Results per collection' },
           },
           required: ['cwd', 'query'],
         },
       },
       {
         name: 'update_correction',
-        description: 'Add a correction note (with semantic replacement)',
+        description: 'Add a correction note',
         inputSchema: {
           type: 'object',
           properties: {
@@ -986,7 +843,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'add_semantic_document',
-        description: 'Add document to Qdrant (with semantic replacement)',
+        description: 'Add document for semantic search',
         inputSchema: {
           type: 'object',
           properties: {
@@ -997,7 +854,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                 id: { type: 'string' },
                 text: { type: 'string' },
                 type: { type: 'string' },
-                collection: { type: 'string', enum: ['decisions', 'patterns', 'artifacts', 'tasks', 'team'] },
                 metadata: { type: 'object' },
               },
               required: ['text'],
@@ -1007,8 +863,21 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
       {
+        name: 'semantic_search',
+        description: 'Semantic search using TF-IDF + cosine similarity',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            cwd: { type: 'string', description: 'Working directory' },
+            query: { type: 'string', description: 'Search query' },
+            topK: { type: 'number', description: 'Number of results' },
+          },
+          required: ['cwd', 'query'],
+        },
+      },
+      {
         name: 'add_team_member',
-        description: 'Add team member to shared memory and Qdrant',
+        description: 'Add team member to shared memory',
         inputSchema: {
           type: 'object',
           properties: {
@@ -1035,157 +904,88 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           },
         },
       },
-      {
-        name: 'get_vector_stats',
-        description: 'Get Qdrant vector database statistics',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            cwd: { type: 'string', description: 'Working directory' },
-          },
-        },
-      },
-      {
-        name: 'clear_collection',
-        description: 'Clear all documents from a collection',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            cwd: { type: 'string', description: 'Working directory' },
-            collection: { type: 'string', enum: ['decisions', 'patterns', 'artifacts', 'tasks', 'team'] },
-          },
-          required: ['cwd', 'collection'],
-        },
-      },
     ],
   };
 });
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const { name, arguments: args } = request.params.arguments;
-
+  const { name, arguments: args = {} } = request.params;
+  const cwd = args.cwd || process.cwd();
+  
   try {
     let result;
-
+    
     switch (name) {
       case 'bootstrap_project':
-        result = await bootstrapProject(args.cwd);
+        result = bootstrapProject(cwd);
         break;
       case 'prepare_runtime_packet':
-        result = await prepareRuntimePacket(args.cwd);
+        result = prepareRuntimePacket(cwd);
         break;
       case 'get_artifact_context':
-        result = await getArtifactContext(args.cwd, args.artifactPath);
+        result = getArtifactContext(cwd, args.artifactPath);
         break;
       case 'persist_delta':
-        result = await persistDelta(args.cwd, args.delta);
+        result = persistDelta(cwd, args.delta);
         break;
       case 'promote_to_canonical':
-        result = await promoteToCanonical(args.cwd);
+        result = promoteToCanonical(cwd);
         break;
       case 'search_memory':
-        result = await searchMemory(args.cwd, args.query, { topK: args.topK });
-        break;
-      case 'semantic_search':
-        result = await semanticSearch(args.cwd, args.query, {
-          collection: args.collection,
-          topK: args.topK,
-          minScore: args.minScore,
-        });
-        break;
-      case 'multi_collection_search':
-        result = await multiCollectionSearch(args.cwd, args.query, {
-          collections: args.collections,
-          topK: args.topK,
-        });
+        result = searchMemory(cwd, args.query, args.options);
         break;
       case 'update_correction':
-        result = await updateCorrection(args.cwd, args.note);
+        result = updateCorrection(cwd, args.note);
         break;
       case 'add_semantic_document':
-        result = await addSemanticDocument(args.cwd, args.document);
+        result = addSemanticDocument(cwd, args.document);
+        break;
+      case 'semantic_search':
+        result = semanticSearch(cwd, args.query, { topK: args.topK });
         break;
       case 'add_team_member':
-        result = await addTeamMember(args.cwd, args.member);
+        result = addTeamMember(cwd, args.member);
         break;
       case 'get_shared_memory':
-        result = await getSharedMemory(args.cwd);
-        break;
-      case 'get_vector_stats':
-        result = await getVectorStats(args.cwd);
-        break;
-      case 'clear_collection':
-        result = await clearCollection(args.cwd, args.collection);
+        result = getSharedMemory(cwd);
         break;
       default:
-        return {
-          content: [{ type: 'text', text: `Unknown tool: ${name}` }],
-          isError: true,
-        };
+        throw new Error(`Unknown tool: ${name}`);
     }
-
+    
     return {
-      content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(result, null, 2),
+        },
+      ],
     };
   } catch (error) {
-    console.error(`[MCP] Error in ${name}:`, error.message);
     return {
-      content: [{ type: 'text', text: `Error: ${error.message}` }],
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({ error: error.message }, null, 2),
+        },
+      ],
       isError: true,
     };
   }
 });
 
 // ============================================================================
-// WebSocket Server for Real-time Events
-// ============================================================================
-
-function startWebSocketServer(port = 8765) {
-  const wss = new WebSocketServer({ port });
-
-  wss.on('connection', (ws) => {
-    console.log('[WebSocket] Client connected');
-    wssClients.add(ws);
-
-    ws.on('close', () => {
-      console.log('[WebSocket] Client disconnected');
-      wssClients.delete(ws);
-    });
-
-    ws.on('error', (error) => {
-      console.error('[WebSocket] Error:', error.message);
-      wssClients.delete(ws);
-    });
-  });
-
-  console.log(`[WebSocket] Server running on ws://localhost:${port}`);
-  return wss;
-}
-
-// ============================================================================
 // Start Server
 // ============================================================================
 
 async function main() {
-  console.log('[MCP] Universal Dev Runtime v2.0.0 starting...');
-
-  // Initialize components
-  await qdrantManager.initialize();
-  await embeddingPipeline.initialize();
-
-  // Start WebSocket server for real-time events
-  const wsPort = process.env.QWX_WS_PORT || 8765;
-  startWebSocketServer(wsPort);
-
-  // Connect MCP server
   const transport = new StdioServerTransport();
   await server.connect(transport);
-
-  console.log('[MCP] Server running on stdio');
-  console.log('[MCP] Ready to accept connections');
+  console.error('Universal Dev Runtime MCP Server v1.1 running on stdio');
+  console.error('Features: Thread state, Shared memory, Semantic search (TF-IDF)');
 }
 
 main().catch((error) => {
-  console.error('[MCP] Fatal error:', error.message);
+  console.error('Fatal error:', error);
   process.exit(1);
 });

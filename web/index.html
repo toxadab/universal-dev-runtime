@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Universal Dev Runtime - Memory Manager</title>
+  <title>Universal Dev Runtime 2.0 - Memory Manager</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
   <style>
@@ -13,6 +13,7 @@
       --success-color: #10b981;
       --warning-color: #f59e0b;
       --danger-color: #ef4444;
+      --info-color: #06b6d4;
       --dark-bg: #1e1e2e;
       --card-bg: #3a3a55;
       --text-primary: #ffffff;
@@ -42,6 +43,15 @@
 
     .navbar-text {
       color: #c0c0d0 !important;
+    }
+
+    .version-badge {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      margin-left: 8px;
     }
 
     .card {
@@ -134,16 +144,19 @@
       color: #ffffff;
     }
 
-    .search-result div,
-    .search-result .flex-1,
-    .search-result > div > div {
-      color: #ffffff !important;
+    .search-result-body {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
     }
 
     .search-score {
       font-size: 0.75rem;
       color: #a5a7ff;
       font-weight: 600;
+      background: rgba(165, 167, 255, 0.2);
+      padding: 2px 8px;
+      border-radius: 4px;
     }
 
     .team-avatar {
@@ -314,6 +327,186 @@
       border-color: var(--primary-color);
       color: #ffffff;
     }
+
+    /* Real-time Panel Styles */
+    .realtime-panel {
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid rgba(99, 102, 241, 0.3);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 24px;
+    }
+
+    .realtime-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .realtime-title {
+      font-weight: 600;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .realtime-indicator {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--success-color);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(1.2); }
+    }
+
+    .realtime-events {
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    .realtime-event {
+      background: rgba(255, 255, 255, 0.05);
+      border-left: 3px solid var(--primary-color);
+      border-radius: 4px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      font-size: 0.875rem;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      animation: slideIn 0.3s ease;
+    }
+
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateX(-10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+
+    .realtime-event-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .realtime-event-icon i {
+      font-size: 0.875rem;
+    }
+
+    .realtime-event-content {
+      flex: 1;
+      color: #d0d0e0;
+    }
+
+    .realtime-event-time {
+      font-size: 0.75rem;
+      color: #8080a0;
+      margin-top: 4px;
+    }
+
+    .event-bootstrap { border-left-color: var(--info-color); }
+    .event-bootstrap .realtime-event-icon { background: rgba(6, 182, 212, 0.2); color: var(--info-color); }
+
+    .event-document_added { border-left-color: var(--success-color); }
+    .event-document_added .realtime-event-icon { background: rgba(16, 185, 129, 0.2); color: var(--success-color); }
+
+    .event-search_performed { border-left-color: var(--warning-color); }
+    .event-search_performed .realtime-event-icon { background: rgba(245, 158, 11, 0.2); color: var(--warning-color); }
+
+    .event-delta_persisted { border-left-color: var(--primary-color); }
+    .event-delta_persisted .realtime-event-icon { background: rgba(99, 102, 241, 0.2); color: var(--primary-color); }
+
+    .event-promoted_to_canonical { border-left-color: var(--secondary-color); }
+    .event-promoted_to_canonical .realtime-event-icon { background: rgba(139, 92, 246, 0.2); color: var(--secondary-color); }
+
+    .event-correction_added { border-left-color: var(--danger-color); }
+    .event-correction_added .realtime-event-icon { background: rgba(239, 68, 68, 0.2); color: var(--danger-color); }
+
+    .event-team_member_added { border-left-color: var(--info-color); }
+    .event-team_member_added .realtime-event-icon { background: rgba(6, 182, 212, 0.2); color: var(--info-color); }
+
+    .vector-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .vector-stat-item {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      padding: 12px;
+      text-align: center;
+    }
+
+    .vector-stat-value {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--primary-color);
+    }
+
+    .vector-stat-label {
+      font-size: 0.75rem;
+      color: #d0d0e0;
+      text-transform: uppercase;
+      margin-top: 4px;
+    }
+
+    .qdrant-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      border-radius: 16px;
+      font-size: 0.875rem;
+      font-weight: 500;
+    }
+
+    .qdrant-status.connected {
+      background: rgba(16, 185, 129, 0.2);
+      color: var(--success-color);
+    }
+
+    .qdrant-status.local {
+      background: rgba(245, 158, 11, 0.2);
+      color: var(--warning-color);
+    }
+
+    .qdrant-status.disconnected {
+      background: rgba(239, 68, 68, 0.2);
+      color: var(--danger-color);
+    }
+
+    .collection-badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      margin-right: 6px;
+      margin-bottom: 6px;
+    }
+
+    .collection-decisions { background: rgba(99, 102, 241, 0.3); color: #a5a7ff; }
+    .collection-patterns { background: rgba(245, 158, 11, 0.3); color: #fcd387; }
+    .collection-artifacts { background: rgba(6, 182, 212, 0.3); color: #67e8f9; }
+    .collection-tasks { background: rgba(139, 92, 246, 0.3); color: #c4b5fd; }
+    .collection-team { background: rgba(16, 185, 129, 0.3); color: #6ee7b7; }
   </style>
 </head>
 <body>
@@ -322,11 +515,16 @@
     <div class="container-fluid">
       <a class="navbar-brand" href="#">
         <i class="bi bi-brain"></i> <span data-i18n="nav.title">Universal Dev Runtime</span>
+        <span class="version-badge">v2.0</span>
       </a>
       <span class="navbar-text text-muted">
-        <i class="bi bi-hdd-stack"></i> <span data-i18n="nav.subtitle">Memory Manager</span>
+        <i class="bi bi-hdd-stack"></i> <span data-i18n="nav.subtitle">Memory Manager with Qdrant</span>
       </span>
       <div class="d-flex ms-auto align-items-center">
+        <div id="qdrantStatus" class="qdrant-status disconnected me-3">
+          <i class="bi bi-circle-fill" style="font-size: 8px;"></i>
+          <span>Connecting...</span>
+        </div>
         <div class="language-switcher">
           <button class="lang-btn active" onclick="setLanguage('en')" data-lang="en">EN</button>
           <button class="lang-btn" onclick="setLanguage('ru')" data-lang="ru">RU</button>
@@ -340,6 +538,28 @@
 
   <!-- Main Content -->
   <div class="container-fluid py-4">
+    <!-- Real-time Panel -->
+    <div class="realtime-panel" id="realtimePanel">
+      <div class="realtime-header">
+        <div class="realtime-title">
+          <div class="realtime-indicator"></div>
+          <span data-i18n="realtime.title">Real-time Memory Events</span>
+        </div>
+        <button class="btn btn-sm btn-outline-primary" onclick="toggleRealtime()">
+          <i class="bi bi-pause" id="realtimeToggleIcon"></i>
+        </button>
+      </div>
+      <div class="realtime-events" id="realtimeEvents">
+        <div class="empty-state">
+          <i class="bi bi-activity"></i>
+          <p data-i18n="realtime.waiting">Waiting for memory events...</p>
+        </div>
+      </div>
+      <div class="vector-stats" id="vectorStats">
+        <!-- Vector stats will be populated here -->
+      </div>
+    </div>
+
     <!-- Stats Row -->
     <div class="row mb-4" id="statsRow">
       <div class="col-md-3">
@@ -384,7 +604,7 @@
           </li>
           <li class="nav-item">
             <a class="nav-link" data-bs-toggle="tab" href="#semanticSearch">
-              <i class="bi bi-search"></i> <span data-i18n="tabs.semanticSearch">Semantic Search</span>
+              <i class="bi bi-search"></i> <span data-i18n="tabs.semanticSearch">Vector Search</span>
             </a>
           </li>
           <li class="nav-item">
@@ -492,10 +712,23 @@
             <div class="p-3">
               <form onsubmit="performSearch(event)" class="mb-4">
                 <div class="input-group input-group-lg">
-                  <input type="text" class="form-control" id="searchQuery" data-i18n-placeholder="search.placeholder" placeholder="Search memory...">
+                  <input type="text" class="form-control" id="searchQuery" data-i18n-placeholder="search.placeholder" placeholder="Search with vector embeddings...">
                   <button type="submit" class="btn btn-primary">
                     <i class="bi bi-search"></i> <span data-i18n="search.search">Search</span>
                   </button>
+                </div>
+                <div class="mt-2">
+                  <label class="form-label text-muted small">
+                    <i class="bi bi-info-circle"></i> 
+                    <span data-i18n="search.collections">Search collections:</span>
+                  </label>
+                  <div id="searchCollections">
+                    <span class="collection-badge collection-decisions">decisions</span>
+                    <span class="collection-badge collection-patterns">patterns</span>
+                    <span class="collection-badge collection-artifacts">artifacts</span>
+                    <span class="collection-badge collection-tasks">tasks</span>
+                    <span class="collection-badge collection-team">team</span>
+                  </div>
                 </div>
               </form>
               <div id="searchResults"></div>
@@ -506,7 +739,10 @@
           <div class="tab-pane fade" id="documents">
             <div class="p-3">
               <div class="d-flex justify-content-between align-items-center mb-3">
-                <h6 class="mb-0"><i class="bi bi-file-earmark-text text-info"></i> <span data-i18n="documents.semanticDocuments">Semantic Documents</span></h6>
+                <h6 class="mb-0">
+                  <i class="bi bi-file-earmark-text text-info"></i> 
+                  <span data-i18n="documents.semanticDocuments">Vector Documents (Qdrant)</span>
+                </h6>
                 <button class="btn btn-sm btn-primary" onclick="showAddDocumentModal()">
                   <i class="bi bi-plus-lg"></i> <span data-i18n="documents.addDocument">Add Document</span>
                 </button>
@@ -519,7 +755,10 @@
           <div class="tab-pane fade" id="runtimeMemory">
             <div class="p-3">
               <div class="d-flex justify-content-between align-items-center mb-3">
-                <h6 class="mb-0"><i class="bi bi-file-code text-primary"></i> <span data-i18n="runtimeMemory.title">Runtime Memory (Auto-generated)</span></h6>
+                <h6 class="mb-0">
+                  <i class="bi bi-file-code text-primary"></i> 
+                  <span data-i18n="runtimeMemory.title">Runtime Memory (Auto-generated)</span>
+                </h6>
                 <button class="btn btn-sm btn-outline-primary" onclick="refreshRuntimeMemory()">
                   <i class="bi bi-arrow-clockwise"></i> <span data-i18n="runtimeMemory.refresh">Refresh</span>
                 </button>
@@ -621,6 +860,16 @@
             <div class="mb-3">
               <label class="form-label" style="color: #d0d0e0;" data-i18n="modals.addDocument.text">Text</label>
               <textarea class="form-control" id="documentText" rows="4" required></textarea>
+            </div>
+            <div class="mb-3">
+              <label class="form-label" style="color: #d0d0e0;" data-i18n="modals.addDocument.collection">Collection</label>
+              <select class="form-select" id="documentCollection">
+                <option value="decisions" data-i18n="modals.documentCollections.decisions">Decisions</option>
+                <option value="patterns" data-i18n="modals.documentCollections.patterns">Patterns</option>
+                <option value="artifacts" data-i18n="modals.documentCollections.artifacts">Artifacts</option>
+                <option value="tasks" data-i18n="modals.documentCollections.tasks">Tasks</option>
+                <option value="team" data-i18n="modals.documentCollections.team">Team</option>
+              </select>
             </div>
             <div class="mb-3">
               <label class="form-label" style="color: #d0d0e0;" data-i18n="modals.addDocument.type">Type</label>

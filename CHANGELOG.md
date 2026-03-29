@@ -1,9 +1,87 @@
 # Changelog
 
-All notable changes to Universal Dev Runtime are documented in this file.
+All notable changes to Universal Dev Runtime will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+---
+
+## [2.0.0] - 2026-03-29
+
+### 🎉 Major Release: Qdrant Vector Search
+
+#### Added
+
+- **Qdrant Integration**
+  - Full vector database support with 5 collections: `decisions`, `patterns`, `artifacts`, `tasks`, `team`
+  - Automatic collection creation on bootstrap
+  - Local fallback mode when Qdrant is unavailable
+  - Connection status indicator in web UI
+
+- **Embeddings Module** (`src/embeddings.js`)
+  - Local embedding generation using `@xenova/transformers`
+  - Model: `all-MiniLM-L6-v2` (384 dimensions)
+  - Automatic caching for performance
+  - Batch processing support
+
+- **Semantic Replacement Logic**
+  - Smart upsert with similarity threshold (0.85)
+  - Automatically updates similar documents instead of creating duplicates
+  - Version tracking for updated documents
+
+- **Real-time Event System**
+  - WebSocket server for live memory events
+  - Real-time panel in web interface
+  - Event types: `bootstrap`, `document_added`, `search_performed`, `delta_persisted`, `promoted_to_canonical`, `correction_added`, `team_member_added`
+  - Auto-refresh UI based on events
+
+- **Enhanced Web Interface**
+  - Modern dark theme with gradient backgrounds
+  - Real-time events panel with live updates
+  - Vector statistics dashboard
+  - Qdrant connection status indicator
+  - Collection badges for document categorization
+  - Similarity scores in search results
+
+- **New MCP Tools**
+  - `semantic_search` - Vector search in specific collection
+  - `multi_collection_search` - Search across multiple collections
+  - `get_vector_stats` - Get Qdrant statistics
+  - `clear_collection` - Clear all documents from collection
+
+#### Changed
+
+- **Version Bump**: 1.1.0 → 2.0.0
+- **Dependencies**:
+  - Added `@qdrant/js-client-rest@^1.9.0`
+  - Added `@xenova/transformers@^2.17.2`
+  - Added `ws@^8.18.0`
+  - Updated to Node.js 18+ requirement
+
+- **Architecture**:
+  - Replaced TF-IDF with vector embeddings
+  - Replaced JSON file storage with Qdrant vector DB
+  - Maintained backward compatibility with local fallback
+
+- **Web Interface**:
+  - Redesigned UI with real-time panel
+  - Added vector search visualization
+  - Improved search results display with similarity scores
+
+#### Deprecated
+
+- TF-IDF semantic search (replaced by vector embeddings)
+- Direct JSON file storage for documents (now in Qdrant)
+
+#### Removed
+
+- `SemanticSearch` class from MCP server (moved to embeddings module)
+
+#### Fixed
+
+- Memory duplication issues (now using semantic replacement)
+- Search accuracy (vector similarity vs keyword matching)
 
 ---
 
@@ -11,89 +89,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Semantic Search** — TF-IDF + cosine similarity implementation (no external API)
-- **Shared Memory** — Team collaboration layer with decisions, patterns, and conventions
-- **New MCP Tools:**
-  - `add_semantic_document` — Add document to semantic index
-  - `semantic_search` — Pure semantic search
-  - `add_team_member` — Add team member to shared memory
-  - `get_shared_memory` — Get team shared memory
-- **CLI Commands:**
-  - `qwx --search "query"` — Search memory from command line
-- **Stack Detection** for 20+ technologies:
-  - PHP, Symfony, Laravel
-  - Node.js, TypeScript
-  - Python, Django, Flask
-  - Go, Gin
-  - Ruby, Rails
-  - Rust, Cargo
-  - Java, Maven, Gradle
-  - Docker, Kubernetes
-- **Documentation:**
-  - Architecture guide
-  - Usage guide
-  - Examples for 5 tech stacks
+- Web interface for memory management
+- Team collaboration features
+- Semantic search with TF-IDF + cosine similarity
+- Project bootstrap with stack detection
+- Thread state management
+- Shared team memory
 
 ### Changed
 
-- Runtime memory now includes Team Memory section
-- `persist_delta` automatically adds to semantic index
-- `promote_to_canonical` moves to shared memory instead of Mem0
-
-### Improved
-
-- Better stack detection with more technologies
-- Faster semantic search (<50ms for 1000 documents)
-- More comprehensive project bootstrap
+- Improved documentation
+- Better error handling
 
 ---
 
 ## [1.0.0] - 2026-03-27
 
-### Added
+### Initial Release
 
-- Initial release
+- Basic MCP server implementation
 - Thread state management
-- Runtime memory generation
-- Basic MCP server with 7 tools
-- QWX CLI wrapper
-- Project bootstrap
-- Stack detection (basic)
-
-### MCP Tools
-
-- `bootstrap_project`
-- `prepare_runtime_packet`
-- `get_artifact_context`
-- `persist_delta`
-- `promote_to_canonical`
-- `search_memory`
-- `update_correction`
-
----
-
-## Future Versions (Planned)
-
-### 1.2.0
-
-- Multi-language semantic search (RU/EN)
-- Automatic entity extraction from code
-- Web UI for memory visualization
-
-### 1.3.0
-
-- Mem0 API integration (optional)
-- Cross-project search
-- Memory export/import
-
-### 2.0.0
-
-- Distributed shared memory
-- Real-time team collaboration
-- Memory versioning
-
----
-
-[Unreleased]: https://github.com/toxadab/universal-dev-runtime/compare/v1.1.0...HEAD
-[1.1.0]: https://github.com/toxadab/universal-dev-runtime/releases/tag/v1.1.0
-[1.0.0]: https://github.com/toxadab/universal-dev-runtime/releases/tag/v1.0.0
+- Simple semantic search
+- CLI wrapper (`qwx`)

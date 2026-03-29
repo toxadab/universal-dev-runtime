@@ -1,111 +1,205 @@
 /**
- * Universal Dev Runtime - Web Interface JavaScript
+ * Universal Dev Runtime 2.0 - Web Interface
+ *
+ * Memory management with Qdrant vector search and real-time events
  */
 
+// ============================================================================
+// Configuration
+// ============================================================================
+
 const API_BASE = '';
+const WS_URL = `ws://${window.location.hostname}:8765`;
 
 // ============================================================================
-// Localization
+// State
 // ============================================================================
 
-let currentLang = localStorage.getItem('language') || 'en';
+let currentCwd = localStorage.getItem('qwx_cwd') || '';
+let realtimeEnabled = true;
+let wsConnection = null;
 let translations = {};
+let currentLanguage = 'en';
 
-// Load translations
-async function loadTranslations() {
+// ============================================================================
+// Initialization
+// ============================================================================
+
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadTranslations();
+  initializeWebSocket();
+  await refreshDashboard();
+  updateLanguageUI();
+
+  // Auto-refresh vector stats every 5 seconds
+  setInterval(refreshVectorStats, 5000);
+});
+
+// ============================================================================
+// WebSocket Real-time Connection
+// ============================================================================
+
+function initializeWebSocket() {
   try {
-    const response = await fetch('locales.json');
-    translations = await response.json();
-    applyLanguage(currentLang);
-  } catch (error) {
-    console.error('Failed to load translations:', error);
-  }
-}
+    wsConnection = new WebSocket(WS_URL);
 
-function setLanguage(lang) {
-  currentLang = lang;
-  localStorage.setItem('language', lang);
-  applyLanguage(lang);
-}
+    wsConnection.onopen = () => {
+      console.log('[WebSocket] Connected');
+      updateQdrantStatus('connected');
+      addRealtimeEvent({
+        event: 'websocket_connected',
+        timestamp: new Date().toISOString(),
+      });
+    };
 
-function applyLanguage(lang) {
-  // Update button states
-  document.querySelectorAll('.lang-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.lang === lang);
-  });
-  
-  // Update all elements with data-i18n attribute
-  document.querySelectorAll('[data-i18n]').forEach(el => {
-    const key = el.dataset.i18n;
-    const translation = getTranslation(key, lang);
-    if (translation) {
-      el.textContent = translation;
-    }
-  });
-  
-  // Update placeholders
-  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
-    const key = el.dataset.i18nPlaceholder;
-    const translation = getTranslation(key, lang);
-    if (translation) {
-      el.placeholder = translation;
-    }
-  });
-  
-  // Update document type select options
-  const docTypeSelect = document.getElementById('documentType');
-  if (docTypeSelect) {
-    const types = ['decision', 'correction', 'note', 'architecture', 'convention'];
-    types.forEach(type => {
-      const option = docTypeSelect.querySelector(`option[value="${type}"]`);
-      if (option) {
-        const translation = getTranslation(`modals.documentTypes.${type}`, lang);
-        if (translation) {
-          option.textContent = translation;
+    wsConnection.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'memory-event' && realtimeEnabled) {
+          handleRealtimeEvent(data);
         }
+      } catch (e) {
+        console.error('[WebSocket] Parse error:', e);
       }
-    });
+    };
+
+    wsConnection.onclose = () => {
+      console.log('[WebSocket] Disconnected');
+      updateQdrantStatus('disconnected');
+      // Reconnect after 3 seconds
+      setTimeout(initializeWebSocket, 3000);
+    };
+
+    wsConnection.onerror = (error) => {
+      console.error('[WebSocket] Error:', error);
+      updateQdrantStatus('local');
+    };
+  } catch (e) {
+    console.error('[WebSocket] Connection failed:', e);
+    updateQdrantStatus('local');
   }
 }
 
-function getTranslation(key, lang) {
-  const keys = key.split('.');
-  let value = translations[lang];
-  for (const k of keys) {
-    if (value && value[k] !== undefined) {
-      value = value[k];
-    } else {
-      return null;
-    }
+function handleRealtimeEvent(data) {
+  addRealtimeEvent(data);
+
+  // Auto-refresh based on event type
+  switch (data.event) {
+    case 'document_added':
+    case 'delta_persisted':
+      refreshDocuments();
+      refreshVectorStats();
+      break;
+    case 'promoted_to_canonical':
+      refreshSharedMemory();
+      break;
+    case 'team_member_added':
+      refreshTeamMembers();
+      break;
+    case 'bootstrap':
+      refreshDashboard();
+      break;
   }
-  return value;
 }
 
-function t(key, params = {}) {
-  let translation = getTranslation(key, currentLang) || key;
-  // Replace parameters like {decisions}
-  Object.entries(params).forEach(([param, value]) => {
-    translation = translation.replace(`{${param}}`, value);
-  });
-  return translation;
+function addRealtimeEvent(data) {
+  const container = document.getElementById('realtimeEvents');
+  const emptyState = container.querySelector('.empty-state');
+  if (emptyState) {
+    emptyState.remove();
+  }
+
+  const eventDiv = document.createElement('div');
+  eventDiv.className = `realtime-event event_${data.event}`;
+  eventDiv.innerHTML = renderRealtimeEvent(data);
+
+  container.insertBefore(eventDiv, container.firstChild);
+
+  // Keep only last 50 events
+  while (container.children.length > 50) {
+    container.removeChild(container.lastChild);
+  }
+}
+
+function renderRealtimeEvent(data) {
+  const icons = {
+    bootstrap: 'bi-cpu',
+    document_added: 'bi-file-earmark-plus',
+    search_performed: 'bi-search',
+    multi_search_performed: 'bi-search',
+    delta_persisted: 'bi-save',
+    promoted_to_canonical: 'bi-arrow-up-circle',
+    correction_added: 'bi-exclamation-triangle',
+    team_member_added: 'bi-person-plus',
+    collection_cleared: 'bi-trash',
+    websocket_connected: 'bi-wifi',
+  };
+
+  const messages = {
+    bootstrap: `Project bootstrapped with stack: ${data.stack || 'unknown'}`,
+    document_added: `Document ${data.action} in ${data.collection}`,
+    search_performed: `Search: "${data.query}" (${data.resultCount} results)`,
+    multi_search_performed: `Multi-search: "${data.query}" (${data.totalResults} results)`,
+    delta_persisted: `Persisted ${data.documents?.length || 0} documents`,
+    promoted_to_canonical: `Promoted to shared memory`,
+    correction_added: `Correction note added`,
+    team_member_added: `Team member added: ${data.member}`,
+    collection_cleared: `Cleared ${data.deletedCount} documents from ${data.collection}`,
+    websocket_connected: 'WebSocket connected to real-time server',
+  };
+
+  const icon = icons[data.event] || 'bi-activity';
+  const message = messages[data.event] || `Event: ${data.event}`;
+  const time = new Date(data.timestamp).toLocaleTimeString();
+
+  return `
+    <div class="realtime-event-icon">
+      <i class="bi ${icon}"></i>
+    </div>
+    <div class="realtime-event-content">
+      <div>${message}</div>
+      <div class="realtime-event-time">${time}</div>
+    </div>
+  `;
+}
+
+function toggleRealtime() {
+  realtimeEnabled = !realtimeEnabled;
+  const icon = document.getElementById('realtimeToggleIcon');
+  icon.className = realtimeEnabled ? 'bi bi-pause' : 'bi bi-play';
+}
+
+function updateQdrantStatus(status) {
+  const el = document.getElementById('qdrantStatus');
+  const labels = {
+    connected: 'Qdrant Connected',
+    local: 'Local Mode',
+    disconnected: 'Connecting...',
+  };
+
+  el.className = `qdrant-status ${status}`;
+  el.innerHTML = `
+    <i class="bi bi-circle-fill" style="font-size: 8px;"></i>
+    <span>${labels[status]}</span>
+  `;
 }
 
 // ============================================================================
-// API Helpers
+// API Calls
 // ============================================================================
 
-async function api(endpoint, options = {}) {
-  const response = await fetch(`${API_BASE}${endpoint}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
-  });
+async function apiCall(endpoint, options = {}) {
+  const url = currentCwd
+    ? `${API_BASE}${endpoint}${endpoint.includes('?') ? '&' : '?'}cwd=${encodeURIComponent(currentCwd)}`
+    : `${API_BASE}${endpoint}`;
+
+  const response = await fetch(url, options);
   const data = await response.json();
+
   if (!data.success) {
-    throw new Error(data.error || 'API request failed');
+    throw new Error(data.error || 'API call failed');
   }
+
   return data.data;
 }
 
@@ -115,216 +209,249 @@ async function api(endpoint, options = {}) {
 
 async function refreshDashboard() {
   try {
-    const dashboard = await api('/api/dashboard');
-    
+    const dashboard = await apiCall('/api/dashboard');
+
     // Update stats
-    document.getElementById('statDecisions').textContent = 
-      (dashboard.sharedMemory?.decisions?.length || 0) + (dashboard.threadState?.recentDecisions?.length || 0);
-    document.getElementById('statPatterns').textContent = 
-      dashboard.sharedMemory?.patterns?.length || 0;
-    document.getElementById('statDocuments').textContent = 
+    document.getElementById('statDecisions').textContent =
+      (dashboard.threadState?.recentDecisions?.length || 0) +
+      (dashboard.sharedMemory?.decisions?.length || 0);
+    document.getElementById('statPatterns').textContent =
+      (dashboard.sharedMemory?.patterns?.length || 0);
+    document.getElementById('statDocuments').textContent =
       dashboard.semanticIndex?.documents?.length || 0;
-    document.getElementById('statTeam').textContent = 
+    document.getElementById('statTeam').textContent =
       dashboard.sharedMemory?.team?.length || 0;
-    
+
     // Update thread state
     renderThreadState(dashboard.threadState);
-    
+
     // Update shared memory
     renderSharedMemory(dashboard.sharedMemory);
-    
+
     // Update documents
     renderDocuments(dashboard.semanticIndex?.documents || []);
-    
-    // Update project info
-    if (dashboard.projectManifest?.stack?.length > 0) {
-      renderStack(dashboard.projectManifest.stack);
-    }
-    
-    showNotification(t('notifications.dashboardRefreshed'), 'success');
-  } catch (error) {
-    showNotification(t('errors.failedToRefresh') + error.message, 'danger');
+
+    // Update runtime memory
+    await refreshRuntimeMemory();
+
+    // Update vector stats
+    refreshVectorStats();
+  } catch (e) {
+    console.error('Dashboard refresh failed:', e);
   }
 }
-
-function renderStack(stack) {
-  // Stack badges can be shown in navbar or header if needed
-  console.log('Project stack:', stack);
-}
-
-// ============================================================================
-// Thread State
-// ============================================================================
 
 function renderThreadState(state) {
-  // Current Task
-  const currentTaskEl = document.getElementById('currentTask');
-  if (state.currentTask) {
-    currentTaskEl.innerHTML = `
-      <span class="memory-item-text">${escapeHtml(state.currentTask)}</span>
-      <button class="btn btn-sm btn-outline-primary" onclick="editCurrentTask()">
-        <i class="bi bi-pencil"></i>
-      </button>
-    `;
-    document.getElementById('currentTaskInput').value = state.currentTask;
-  } else {
-    currentTaskEl.innerHTML = `<span class="text-muted">${t('threadState.noCurrentTask')}</span>`;
-  }
+  // Current task
+  document.getElementById('currentTask').innerHTML = state.currentTask
+    ? `<span class="memory-item-text">${escapeHtml(state.currentTask)}</span>`
+    : '<span class="text-muted">No current task</span>';
 
-  // Active Artifacts
-  const artifactsEl = document.getElementById('activeArtifacts');
-  if (state.activeArtifacts?.length > 0) {
-    artifactsEl.innerHTML = state.activeArtifacts.map(a => `
-      <div class="memory-item">
-        <span class="memory-item-text"><i class="bi bi-file-code text-info"></i> ${escapeHtml(a)}</span>
-        <button class="btn btn-sm btn-outline-danger btn-icon" onclick="removeArtifact('${escapeHtml(a)}')">
-          <i class="bi bi-x-lg"></i>
-        </button>
-      </div>
-    `).join('');
-  } else {
-    artifactsEl.innerHTML = `<div class="empty-state"><i class="bi bi-folder"></i><p>${t('threadState.noActiveArtifacts')}</p></div>`;
-  }
+  // Active artifacts
+  document.getElementById('activeArtifacts').innerHTML = state.activeArtifacts?.length
+    ? state.activeArtifacts.map(a => `
+        <div class="memory-item">
+          <span class="memory-item-text"><i class="bi bi-file-code text-info"></i> ${escapeHtml(a)}</span>
+        </div>
+      `).join('')
+    : '<span class="text-muted">No active artifacts</span>';
 
-  // Recent Decisions
-  const decisionsEl = document.getElementById('recentDecisions');
-  if (state.recentDecisions?.length > 0) {
-    decisionsEl.innerHTML = state.recentDecisions.map((d, i) => `
-      <div class="memory-item">
-        <span class="memory-item-text">${escapeHtml(d)}</span>
-      </div>
-    `).join('');
-  } else {
-    decisionsEl.innerHTML = `<div class="empty-state"><i class="bi bi-check-circle"></i><p>${t('threadState.noRecentDecisions')}</p></div>`;
-  }
+  // Recent decisions
+  document.getElementById('recentDecisions').innerHTML = state.recentDecisions?.length
+    ? state.recentDecisions.map(d => `
+        <div class="memory-item">
+          <span class="memory-item-text"><i class="bi bi-check-circle text-success"></i> ${escapeHtml(d)}</span>
+        </div>
+      `).join('')
+    : '<span class="text-muted">No recent decisions</span>';
 
-  // Open Questions
-  const questionsEl = document.getElementById('openQuestions');
-  if (state.openQuestions?.length > 0) {
-    questionsEl.innerHTML = state.openQuestions.map(q => `
-      <div class="memory-item">
-        <span class="memory-item-text"><i class="bi bi-question text-primary"></i> ${escapeHtml(q)}</span>
-      </div>
-    `).join('');
-  } else {
-    questionsEl.innerHTML = `<div class="empty-state"><i class="bi bi-question-circle"></i><p>${t('threadState.noOpenQuestions')}</p></div>`;
-  }
+  // Open questions
+  document.getElementById('openQuestions').innerHTML = state.openQuestions?.length
+    ? state.openQuestions.map(q => `
+        <div class="memory-item">
+          <span class="memory-item-text"><i class="bi bi-question-circle text-primary"></i> ${escapeHtml(q)}</span>
+        </div>
+      `).join('')
+    : '<span class="text-muted">No open questions</span>';
 
-  // Correction Notes
-  const correctionsEl = document.getElementById('correctionNotes');
-  if (state.correctionNotes?.length > 0) {
-    correctionsEl.innerHTML = state.correctionNotes.map((n, i) => `
-      <div class="memory-item">
-        <span class="memory-item-text"><i class="bi bi-exclamation-triangle text-danger"></i> ${escapeHtml(typeof n === 'string' ? n : n.text)}</span>
-      </div>
-    `).join('');
-  } else {
-    correctionsEl.innerHTML = `<div class="empty-state"><i class="bi bi-exclamation-triangle"></i><p>${t('threadState.noCorrectionNotes')}</p></div>`;
+  // Correction notes
+  document.getElementById('correctionNotes').innerHTML = state.correctionNotes?.length
+    ? state.correctionNotes.map((n, i) => `
+        <div class="memory-item">
+          <span class="memory-item-text"><i class="bi bi-exclamation-triangle text-danger"></i> ${escapeHtml(typeof n === 'string' ? n : n.text)}</span>
+          <button class="btn btn-icon btn-outline-danger" onclick="deleteCorrection(${i})">
+            <i class="bi bi-trash"></i>
+          </button>
+        </div>
+      `).join('')
+    : '<span class="text-muted">No correction notes</span>';
+}
+
+function renderSharedMemory(memory) {
+  // Team members
+  document.getElementById('teamMembers').innerHTML = memory.team?.length
+    ? memory.team.map((m, i) => `
+        <div class="memory-item">
+          <div class="d-flex align-items-center gap-3">
+            <div class="team-avatar">${m.name.charAt(0).toUpperCase()}</div>
+            <div>
+              <div class="fw-semibold">${escapeHtml(m.name)}</div>
+              <small class="text-muted">${escapeHtml(m.role)}</small>
+            </div>
+          </div>
+          <button class="btn btn-icon btn-outline-danger" onclick="deleteTeamMember(${i})">
+            <i class="bi bi-trash"></i>
+          </button>
+        </div>
+      `).join('')
+    : '<span class="text-muted">No team members</span>';
+
+  // Team decisions
+  document.getElementById('teamDecisions').innerHTML = memory.decisions?.length
+    ? memory.decisions.map((d, i) => `
+        <div class="memory-item">
+          <span class="memory-item-text"><i class="bi bi-check-all text-success"></i> ${escapeHtml(d)}</span>
+          <button class="btn btn-icon btn-outline-danger" onclick="deleteDecision(${i})">
+            <i class="bi bi-trash"></i>
+          </button>
+        </div>
+      `).join('')
+    : '<span class="text-muted">No team decisions</span>';
+
+  // Patterns
+  document.getElementById('patterns').innerHTML = memory.patterns?.length
+    ? memory.patterns.map((p, i) => `
+        <div class="memory-item">
+          <span class="memory-item-text"><i class="bi bi-palette text-warning"></i> ${escapeHtml(p)}</span>
+          <button class="btn btn-icon btn-outline-danger" onclick="deletePattern(${i})">
+            <i class="bi bi-trash"></i>
+          </button>
+        </div>
+      `).join('')
+    : '<span class="text-muted">No patterns or conventions</span>';
+}
+
+function renderDocuments(documents) {
+  document.getElementById('documentsList').innerHTML = documents.length
+    ? documents.map(doc => `
+        <div class="memory-item">
+          <div class="flex-1">
+            <div class="d-flex align-items-center gap-2 mb-1">
+              <span class="collection-badge collection-${doc.collection || 'decisions'}">${doc.collection || 'decisions'}</span>
+              <span class="badge bg-secondary">${doc.type}</span>
+            </div>
+            <div>${escapeHtml(doc.text)}</div>
+            ${doc.metadata?.category ? `<small class="text-muted"><i class="bi bi-tag"></i> ${escapeHtml(doc.metadata.category)}</small>` : ''}
+          </div>
+          <button class="btn btn-icon btn-outline-danger" onclick="deleteDocument('${doc.id}')">
+            <i class="bi bi-trash"></i>
+          </button>
+        </div>
+      `).join('')
+    : '<div class="empty-state"><i class="bi bi-file-earmark-text"></i><p>No documents</p></div>';
+}
+
+async function refreshVectorStats() {
+  try {
+    const stats = await apiCall('/api/vector-stats');
+
+    const container = document.getElementById('vectorStats');
+    const collections = stats.vectorStats || {};
+
+    let html = '';
+    for (const [name, data] of Object.entries(collections)) {
+      html += `
+        <div class="vector-stat-item">
+          <div class="vector-stat-value">${data.count || 0}</div>
+          <div class="vector-stat-label">${name}</div>
+        </div>
+      `;
+    }
+
+    if (!html) {
+      html = '<div class="text-muted text-center">No vector stats available</div>';
+    }
+
+    container.innerHTML = html;
+
+    // Update Qdrant status based on availability
+    if (stats.qdrantAvailable) {
+      updateQdrantStatus('connected');
+    } else {
+      updateQdrantStatus('local');
+    }
+  } catch (e) {
+    console.error('Vector stats refresh failed:', e);
   }
 }
+
+// ============================================================================
+// Thread State Operations
+// ============================================================================
 
 async function updateCurrentTask(event) {
   event.preventDefault();
-  const task = document.getElementById('currentTaskInput').value.trim();
-  
-  if (!task) {
-    showNotification(t('errors.enterTask'), 'warning');
-    return;
-  }
-  
+  const input = document.getElementById('currentTaskInput');
+  const task = input.value.trim();
+
+  if (!task) return;
+
   try {
-    await api('/api/thread-state', {
+    await apiCall('/api/thread-state', {
       method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ currentTask: task }),
     });
-    showNotification(t('notifications.taskUpdated'), 'success');
-    refreshDashboard();
-  } catch (error) {
-    showNotification(t('errors.failedToUpdateTask') + error.message, 'danger');
-  }
-}
 
-function editCurrentTask() {
-  document.getElementById('currentTaskInput').focus();
+    input.value = '';
+    await refreshDashboard();
+
+    addRealtimeEvent({
+      event: 'delta_persisted',
+      timestamp: new Date().toISOString(),
+      documents: [{ collection: 'tasks', action: 'updated' }],
+    });
+  } catch (e) {
+    alert('Failed to update task: ' + e.message);
+  }
 }
 
 async function clearThreadState() {
-  if (!confirm(t('confirmations.clearThreadState'))) return;
-  
+  if (!confirm('Clear all thread state?')) return;
+
   try {
-    await api('/api/thread-state/clear', { method: 'POST' });
-    showNotification(t('notifications.threadStateCleared'), 'success');
-    refreshDashboard();
-  } catch (error) {
-    showNotification(t('errors.failedToClear') + error.message, 'danger');
+    await apiCall('/api/thread-state/clear', { method: 'POST' });
+    await refreshDashboard();
+  } catch (e) {
+    alert('Failed to clear thread state: ' + e.message);
   }
 }
 
 async function promoteToCanonical() {
   try {
-    const result = await api('/api/promote', { method: 'POST' });
-    showNotification(t('notifications.promoted', { decisions: result.decisions, patterns: result.patterns }), 'success');
-    refreshDashboard();
-  } catch (error) {
-    showNotification(t('errors.failedToPromote') + error.message, 'danger');
+    await apiCall('/api/promote', { method: 'POST' });
+    await refreshDashboard();
+    alert('Promoted to shared memory!');
+  } catch (e) {
+    alert('Failed to promote: ' + e.message);
   }
 }
 
 // ============================================================================
-// Shared Memory
+// Shared Memory Operations
 // ============================================================================
 
-function renderSharedMemory(sharedMemory) {
-  // Team Members
-  const teamEl = document.getElementById('teamMembers');
-  if (sharedMemory.team?.length > 0) {
-    teamEl.innerHTML = sharedMemory.team.map((m, i) => `
-      <div class="memory-item">
-        <div class="d-flex align-items-center gap-3">
-          <div class="team-avatar">${m.name.charAt(0).toUpperCase()}</div>
-          <div>
-            <div class="fw-semibold">${escapeHtml(m.name)}</div>
-            <div class="text-muted small">${escapeHtml(m.role)}</div>
-          </div>
-        </div>
-        <button class="btn btn-sm btn-outline-danger btn-icon" onclick="removeTeamMember(${i})">
-          <i class="bi bi-trash"></i>
-        </button>
-      </div>
-    `).join('');
-  } else {
-    teamEl.innerHTML = `<div class="empty-state"><i class="bi bi-people"></i><p>${t('sharedMemory.noTeamMembers')}</p></div>`;
+async function refreshSharedMemory() {
+  try {
+    const memory = await apiCall('/api/shared-memory');
+    renderSharedMemory(memory);
+  } catch (e) {
+    console.error('Shared memory refresh failed:', e);
   }
+}
 
-  // Team Decisions
-  const decisionsEl = document.getElementById('teamDecisions');
-  if (sharedMemory.decisions?.length > 0) {
-    decisionsEl.innerHTML = sharedMemory.decisions.map((d, i) => `
-      <div class="memory-item">
-        <span class="memory-item-text"><i class="bi bi-check-circle text-success"></i> ${escapeHtml(d)}</span>
-        <button class="btn btn-sm btn-outline-danger btn-icon" onclick="removeDecision(${i})">
-          <i class="bi bi-trash"></i>
-        </button>
-      </div>
-    `).join('');
-  } else {
-    decisionsEl.innerHTML = `<div class="empty-state"><i class="bi bi-check-circle"></i><p>${t('sharedMemory.noTeamDecisions')}</p></div>`;
-  }
-
-  // Patterns
-  const patternsEl = document.getElementById('patterns');
-  if (sharedMemory.patterns?.length > 0) {
-    patternsEl.innerHTML = sharedMemory.patterns.map((p, i) => `
-      <div class="memory-item">
-        <span class="memory-item-text"><i class="bi bi-palette text-warning"></i> ${escapeHtml(p)}</span>
-        <button class="btn btn-sm btn-outline-danger btn-icon" onclick="removePattern(${i})">
-          <i class="bi bi-trash"></i>
-        </button>
-      </div>
-    `).join('');
-  } else {
-    patternsEl.innerHTML = `<div class="empty-state"><i class="bi bi-palette"></i><p>${t('sharedMemory.noPatterns')}</p></div>`;
-  }
+async function refreshTeamMembers() {
+  await refreshSharedMemory();
 }
 
 function showAddTeamModal() {
@@ -333,31 +460,33 @@ function showAddTeamModal() {
 
 async function addTeamMember(event) {
   event.preventDefault();
-  const name = document.getElementById('teamMemberName').value.trim();
-  const role = document.getElementById('teamMemberRole').value.trim();
-  
+  const name = document.getElementById('teamMemberName').value;
+  const role = document.getElementById('teamMemberRole').value;
+
   try {
-    await api('/api/team', {
+    await apiCall('/api/team', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, role }),
     });
+
     bootstrap.Modal.getInstance(document.getElementById('addTeamModal')).hide();
     document.getElementById('teamMemberName').value = '';
     document.getElementById('teamMemberRole').value = '';
-    showNotification(t('notifications.teamMemberAdded'), 'success');
-    refreshDashboard();
-  } catch (error) {
-    showNotification(t('errors.failedToAddTeamMember') + error.message, 'danger');
+    await refreshDashboard();
+  } catch (e) {
+    alert('Failed to add team member: ' + e.message);
   }
 }
 
-async function removeTeamMember(index) {
+async function deleteTeamMember(index) {
+  if (!confirm('Remove this team member?')) return;
+
   try {
-    await api(`/api/team/${index}`, { method: 'DELETE' });
-    showNotification(t('notifications.teamMemberRemoved'), 'success');
-    refreshDashboard();
-  } catch (error) {
-    showNotification(t('errors.failedToRemoveTeamMember') + error.message, 'danger');
+    await apiCall(`/api/team/${index}`, { method: 'DELETE' });
+    await refreshDashboard();
+  } catch (e) {
+    alert('Failed to delete: ' + e.message);
   }
 }
 
@@ -367,34 +496,31 @@ function showAddDecisionModal() {
 
 async function addDecision(event) {
   event.preventDefault();
-  const text = document.getElementById('decisionText').value.trim();
-  
-  if (!text) {
-    showNotification(t('errors.enterDecisionText'), 'warning');
-    return;
-  }
-  
+  const text = document.getElementById('decisionText').value;
+
   try {
-    await api('/api/decisions', {
+    await apiCall('/api/decisions', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text }),
     });
+
     bootstrap.Modal.getInstance(document.getElementById('addDecisionModal')).hide();
     document.getElementById('decisionText').value = '';
-    showNotification(t('notifications.decisionAdded'), 'success');
-    refreshDashboard();
-  } catch (error) {
-    showNotification(t('errors.failedToAddDecision') + error.message, 'danger');
+    await refreshDashboard();
+  } catch (e) {
+    alert('Failed to add decision: ' + e.message);
   }
 }
 
-async function removeDecision(index) {
+async function deleteDecision(index) {
+  if (!confirm('Remove this decision?')) return;
+
   try {
-    await api(`/api/decisions/${index}`, { method: 'DELETE' });
-    showNotification(t('notifications.decisionRemoved'), 'success');
-    refreshDashboard();
-  } catch (error) {
-    showNotification(t('errors.failedToRemoveDecision') + error.message, 'danger');
+    await apiCall(`/api/decisions/${index}`, { method: 'DELETE' });
+    await refreshDashboard();
+  } catch (e) {
+    alert('Failed to delete: ' + e.message);
   }
 }
 
@@ -404,113 +530,93 @@ function showAddPatternModal() {
 
 async function addPattern(event) {
   event.preventDefault();
-  const text = document.getElementById('patternText').value.trim();
-  
-  if (!text) {
-    showNotification(t('errors.enterPatternText'), 'warning');
-    return;
-  }
-  
+  const text = document.getElementById('patternText').value;
+
   try {
-    await api('/api/patterns', {
+    await apiCall('/api/patterns', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text }),
     });
+
     bootstrap.Modal.getInstance(document.getElementById('addPatternModal')).hide();
     document.getElementById('patternText').value = '';
-    showNotification(t('notifications.patternAdded'), 'success');
-    refreshDashboard();
-  } catch (error) {
-    showNotification(t('errors.failedToAddPattern') + error.message, 'danger');
+    await refreshDashboard();
+  } catch (e) {
+    alert('Failed to add pattern: ' + e.message);
   }
 }
 
-async function removePattern(index) {
+async function deletePattern(index) {
+  if (!confirm('Remove this pattern?')) return;
+
   try {
-    await api(`/api/patterns/${index}`, { method: 'DELETE' });
-    showNotification(t('notifications.patternRemoved'), 'success');
-    refreshDashboard();
-  } catch (error) {
-    showNotification(t('errors.failedToRemovePattern') + error.message, 'danger');
+    await apiCall(`/api/patterns/${index}`, { method: 'DELETE' });
+    await refreshDashboard();
+  } catch (e) {
+    alert('Failed to delete: ' + e.message);
   }
 }
 
 // ============================================================================
-// Semantic Search
+// Vector Search
 // ============================================================================
 
 async function performSearch(event) {
   event.preventDefault();
   const query = document.getElementById('searchQuery').value.trim();
-  
-  if (!query) {
-    showNotification(t('errors.enterSearchQuery'), 'warning');
-    return;
-  }
-  
+
+  if (!query) return;
+
   try {
-    const results = await api(`/api/semantic-search?q=${encodeURIComponent(query)}`);
-    renderSearchResults(results);
-  } catch (error) {
-    showNotification(t('errors.searchFailed') + error.message, 'danger');
-  }
-}
+    const results = await apiCall(`/api/semantic-search?q=${encodeURIComponent(query)}&topK=10`);
 
-function renderSearchResults(data) {
-  const resultsEl = document.getElementById('searchResults');
+    const container = document.getElementById('searchResults');
+    if (!results.results || results.results.length === 0) {
+      container.innerHTML = '<div class="empty-state"><i class="bi bi-search"></i><p>No results found</p></div>';
+      return;
+    }
 
-  if (!data.results || data.results.length === 0) {
-    resultsEl.innerHTML = `<div class="empty-state"><i class="bi bi-search"></i><p>${t('search.noResults')}</p></div>`;
-    return;
-  }
-
-  resultsEl.innerHTML = `
-    <div class="alert alert-info">
-      <i class="bi bi-info-circle"></i> ${t('search.found')} ${data.results.length} ${t('search.results')} ${t('search.for')} "${escapeHtml(data.query)}"
-    </div>
-    ${data.results.map(r => `
+    container.innerHTML = results.results.map(r => `
       <div class="search-result">
-        <div class="d-flex justify-content-between align-items-start">
+        <div class="search-result-body">
           <div class="flex-1">
-            <span class="badge badge-stack mb-2">${escapeHtml(r.type)}</span>
+            <div class="d-flex align-items-center gap-2 mb-1">
+              <span class="badge bg-secondary">${r.type}</span>
+              ${r.metadata?.category ? `<span class="badge bg-info">${escapeHtml(r.metadata.category)}</span>` : ''}
+            </div>
             <div>${escapeHtml(r.text)}</div>
           </div>
-          <div class="search-score ms-3">
-            ${(r.score * 100).toFixed(1)}% ${t('search.match')}
+          <div class="search-score">
+            <i class="bi bi-graph-up"></i> ${(r.score * 100).toFixed(1)}% match
           </div>
         </div>
       </div>
-    `).join('')}
-  `;
+    `).join('');
+
+    addRealtimeEvent({
+      event: 'search_performed',
+      query,
+      resultCount: results.results.length,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (e) {
+    document.getElementById('searchResults').innerHTML =
+      `<div class="alert alert-danger">Search failed: ${escapeHtml(e.message)}</div>`;
+  }
 }
 
 // ============================================================================
 // Documents
 // ============================================================================
 
-function renderDocuments(documents) {
-  const docsEl = document.getElementById('documentsList');
-
-  if (documents.length === 0) {
-    docsEl.innerHTML = `<div class="empty-state"><i class="bi bi-file-earmark-text"></i><p>${t('documents.noDocuments')}</p></div>`;
-    return;
+async function refreshDocuments() {
+  try {
+    const docs = await apiCall('/api/semantic-documents');
+    renderDocuments(docs);
+  } catch (e) {
+    console.error('Documents refresh failed:', e);
   }
-  
-  docsEl.innerHTML = documents.map((doc, i) => `
-    <div class="memory-item">
-      <div class="flex-1">
-        <div class="d-flex align-items-center gap-2 mb-1">
-          <span class="badge badge-stack">${escapeHtml(doc.type)}</span>
-          <small class="text-muted">${new Date(doc.addedAt).toLocaleDateString()}</small>
-        </div>
-        <div>${escapeHtml(doc.text)}</div>
-        ${doc.metadata?.category ? `<div class="text-muted small mt-1"><i class="bi bi-tag"></i> ${escapeHtml(doc.metadata.category)}</div>` : ''}
-      </div>
-      <button class="btn btn-sm btn-outline-danger btn-icon" onclick="removeDocument('${escapeHtml(doc.id)}')">
-        <i class="bi bi-trash"></i>
-      </button>
-    </div>
-  `).join('');
 }
 
 function showAddDocumentModal() {
@@ -519,41 +625,40 @@ function showAddDocumentModal() {
 
 async function addDocument(event) {
   event.preventDefault();
-  const text = document.getElementById('documentText').value.trim();
+  const text = document.getElementById('documentText').value;
+  const collection = document.getElementById('documentCollection').value;
   const type = document.getElementById('documentType').value;
-  const category = document.getElementById('documentCategory').value.trim();
-  
-  if (!text) {
-    showNotification(t('errors.enterDocumentText'), 'warning');
-    return;
-  }
-  
+  const category = document.getElementById('documentCategory').value;
+
   try {
-    await api('/api/semantic-documents', {
+    await apiCall('/api/semantic-documents', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         text,
+        collection,
         type,
         metadata: category ? { category } : {},
       }),
     });
+
     bootstrap.Modal.getInstance(document.getElementById('addDocumentModal')).hide();
     document.getElementById('documentText').value = '';
     document.getElementById('documentCategory').value = '';
-    showNotification(t('notifications.documentAdded'), 'success');
-    refreshDashboard();
-  } catch (error) {
-    showNotification(t('errors.failedToAddDocument') + error.message, 'danger');
+    await refreshDashboard();
+  } catch (e) {
+    alert('Failed to add document: ' + e.message);
   }
 }
 
-async function removeDocument(id) {
+async function deleteDocument(id) {
+  if (!confirm('Delete this document?')) return;
+
   try {
-    await api(`/api/semantic-documents/${encodeURIComponent(id)}`, { method: 'DELETE' });
-    showNotification(t('notifications.documentRemoved'), 'success');
-    refreshDashboard();
-  } catch (error) {
-    showNotification(t('errors.failedToRemoveDocument') + error.message, 'danger');
+    await apiCall(`/api/semantic-documents/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    await refreshDashboard();
+  } catch (e) {
+    alert('Failed to delete: ' + e.message);
   }
 }
 
@@ -563,11 +668,10 @@ async function removeDocument(id) {
 
 async function refreshRuntimeMemory() {
   try {
-    const data = await api('/api/runtime-memory');
-    document.getElementById('runtimeMemoryContent').textContent = data.content || t('runtimeMemory.notGenerated');
-    showNotification(t('notifications.runtimeMemoryRefreshed'), 'success');
-  } catch (error) {
-    showNotification(t('errors.failedToRefreshRuntime') + error.message, 'danger');
+    const data = await apiCall('/api/runtime-memory');
+    document.getElementById('runtimeMemoryContent').textContent = data.content || 'No runtime memory generated';
+  } catch (e) {
+    document.getElementById('runtimeMemoryContent').textContent = 'Error loading runtime memory: ' + e.message;
   }
 }
 
@@ -581,44 +685,51 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-function showNotification(message, type = 'info') {
-  const alertClass = {
-    success: 'alert-success',
-    danger: 'alert-danger',
-    warning: 'alert-warning',
-    info: 'alert-info',
-  }[type] || 'alert-info';
-  
-  const icon = {
-    success: 'bi-check-circle',
-    danger: 'bi-exclamation-triangle',
-    warning: 'bi-exclamation-circle',
-    info: 'bi-info-circle',
-  }[type] || 'bi-info-circle';
-  
-  const alert = document.createElement('div');
-  alert.className = `alert ${alertClass} alert-dismissible fade show position-fixed`;
-  alert.style.cssText = 'top: 80px; right: 20px; z-index: 9999; min-width: 300px;';
-  alert.innerHTML = `
-    <i class="bi ${icon}"></i> ${escapeHtml(message)}
-    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-  `;
-  
-  document.body.appendChild(alert);
-  setTimeout(() => alert.remove(), 5000);
-}
-
-// ============================================================================
-// Initialize
-// ============================================================================
-
 function switchToTab(tabId) {
-  const tabTrigger = new bootstrap.Tab(document.querySelector(`[href="#${tabId}"]`));
-  tabTrigger.show();
+  const tab = document.querySelector(`[href="#${tabId}"]`);
+  if (tab) {
+    new bootstrap.Tab(tab).show();
+  }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  loadTranslations();
-  refreshDashboard();
-  refreshRuntimeMemory();
-});
+async function loadTranslations() {
+  try {
+    const response = await fetch('locales.json');
+    translations = await response.json();
+  } catch (e) {
+    console.error('Failed to load translations:', e);
+  }
+}
+
+function setLanguage(lang) {
+  currentLanguage = lang;
+  localStorage.setItem('qwx_language', lang);
+  updateLanguageUI();
+  applyTranslations();
+}
+
+function updateLanguageUI() {
+  document.querySelectorAll('.lang-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.lang === currentLanguage);
+  });
+}
+
+function applyTranslations() {
+  const t = translations[currentLanguage] || translations['en'] || {};
+
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.dataset.i18n;
+    const value = key.split('.').reduce((obj, k) => obj?.[k], t);
+    if (value) {
+      el.textContent = value;
+    }
+  });
+
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+    const key = el.dataset.i18nPlaceholder;
+    const value = key.split('.').reduce((obj, k) => obj?.[k], t);
+    if (value) {
+      el.placeholder = value;
+    }
+  });
+}
